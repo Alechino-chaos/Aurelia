@@ -214,6 +214,59 @@ test.describe('paper library workspace', () => {
     } finally { await rmdir(blocked); }
   });
 
+  for (const remove of [false, true]) {
+    test(`failed active ${remove ? 'removal' : 'tab-close'} reconciles dirty metadata and recovers normal close`, async () => {
+      await importFiles([a, b]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
+      const original = await readFile(a), aid = await entry(a).getAttribute('data-library-id'), bid = await entry(b).getAttribute('data-library-id');
+      const documentId = (await page.evaluate(() => window.paperdesk!.getLibrary())).entries.find(entry => entry.id === aid)!.documentId!;
+      await page.getByRole('tab', { name: '对话', exact: true }).click(); await page.getByRole('textbox', { name: 'AI 消息' }).fill('draft retained after metadata failure');
+      await expect(page.getByTestId('session-status')).toHaveText('已保存到本机'); await page.evaluate(id => window.paperdesk!.flushReadingSession(id), documentId);
+      const session = path.join(profile, 'reading-sessions', `${documentId}.json`), blocked = path.join(profile, 'library.json.tmp');
+      const savedSession = JSON.parse(await readFile(session, 'utf8')); await mkdir(blocked);
+      try {
+        if (remove) { await entry(a).locator('summary').click(); await entry(a).getByRole('button', { name: '移出论文库' }).click(); }
+        else await entry(a).getByRole('button', { name: `关闭论文 ${a}`, exact: true }).click();
+        await expect(page.locator('.workspace-notice[role="alert"]')).toContainText('保存');
+        const dirty = await page.evaluate(() => window.paperdesk!.getLibrary()); expect(dirty.activeId).toBe(bid); expect(dirty.openIds).not.toContain(aid); expect(dirty.entries.some(entry => entry.id === aid)).toBe(!remove);
+        await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', bid!); await expect(page.locator('.textLayer').first()).toContainText('Beta');
+      } finally { await rmdir(blocked); }
+      expect(await readFile(a)).toEqual(original); expect(JSON.parse(await readFile(session, 'utf8'))).toEqual(savedSession);
+      // Retry writes through ordinary navigation; a removed paper can be imported again without losing its content-keyed session.
+      if (remove) { await importFiles([a]); await expect(entry(a)).toBeVisible(); }
+      await openEntry(a); await page.getByRole('tab', { name: '对话', exact: true }).click();
+      await expect(page.getByRole('textbox', { name: 'AI 消息' })).toHaveValue('draft retained after metadata failure'); await openEntry(b);
+      // Cancel any unexpected save-error dialog. Successful close therefore cannot use explicit discard.
+      await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false }); });
+      await app.close(); await launch(); await loaded('paper.pdf');
+      await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', bid!); await expect(page.locator('.textLayer').first()).toContainText('Beta');
+      await openEntry(a); await expect(page.getByRole('textbox', { name: 'AI 消息' })).toHaveValue('draft retained after metadata failure'); expect(await readFile(a)).toEqual(original);
+    });
+  }
+
+  test('a delayed failed removal preserves a newer queued selection and its capture', async () => {
+    await importFiles([a, b, c]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
+    const aid = await entry(a).getAttribute('data-library-id'), cid = await entry(c).getAttribute('data-library-id');
+    await app.evaluate(({ ipcMain }, aid) => {
+      const handlers = (ipcMain as any)._invokeHandlers, update = handlers.get('library:update');
+      handlers.set('library:update', async (...args: any[]) => {
+        try { return await update(...args); }
+        catch (reason) {
+          if (args[1].type === 'entry-remove' && args[1].id === aid) { (globalThis as any).failedRemovalHeld = true; await new Promise(resolve => { (globalThis as any).releaseFailedRemoval = resolve; }); }
+          throw reason;
+        }
+      });
+    }, aid);
+    const blocked = path.join(profile, 'library.json.tmp'); await mkdir(blocked);
+    try {
+      await entry(a).locator('summary').click(); await entry(a).getByRole('button', { name: '移出论文库' }).click();
+      await expect.poll(() => app.evaluate(() => !!(globalThis as any).failedRemovalHeld)).toBe(true);
+      await entry(c).locator('.paper-open').click();
+      await rmdir(blocked); await app.evaluate(() => (globalThis as any).releaseFailedRemoval());
+      await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', cid!); await expect(page.locator('.textLayer').first()).toContainText('Gamma');
+      expect((await page.evaluate(() => window.paperdesk!.getLibrary())).activeId).toBe(cid);
+    } finally { await rmdir(blocked).catch(() => {}); await app.evaluate(() => (globalThis as any).releaseFailedRemoval?.()); }
+  });
+
   test('a slow native Open result cannot override a later library selection', async () => {
     await importFiles([a, b, c]); await loaded('paper.pdf'); await openEntry(c); await pick([a]);
     await app.evaluate(({ ipcMain }) => {

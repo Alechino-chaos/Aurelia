@@ -33,15 +33,47 @@ export function Workspace() {
     const request = typeof operation === 'function' ? operation() : operation;
     if (!request) return state.current!;
     try { const next = await bridge.updateLibrary(request); publish(next); return next; }
-    catch (reason) { if (live.current) setNotice(`论文库操作或保存失败：${message(reason)}`); throw reason; }
+    catch (reason) {
+      // A rejected write can retain a dirty authoritative mutation. Read it before the next queued capture/action.
+      try { const next = await bridge.getLibrary(); publish(next); reconcileOwnership(next); }
+      catch { /* Keep the original actionable failure if authoritative metadata is temporarily unavailable. */ }
+      if (live.current) setNotice(`论文库操作或保存失败：${message(reason)}`); throw reason;
+    }
   }), [bridge, publish]);
   const change = (operation: LibraryAction) => { void action(operation).catch(() => {}); };
   function displayCurrent(next: Current | null) { rendered.current = next; setCurrent(next); setPagesNavigation(false); }
+  function reconcileOwnership(next: LibraryState) {
+    if (!live.current) return;
+    const owner = rendered.current, ownerEntry = next.entries.find(entry => entry.id === owner?.id);
+    if (owner?.id === 'sample' || owner && ownerEntry?.documentId === owner.resource.documentId && next.openIds.includes(owner.id) && next.activeId === owner.id) return;
+    if (owner) displayCurrent(null);
+    // Preserve an in-flight newer intent. Only recover selection when its target vanished or close left it empty.
+    const requested = selection.current;
+    if (requested !== 'sample' && (!requested || !next.entries.some(entry => entry.id === requested))) {
+      ++generation.current; selection.current = next.activeId; cancelPending(); setLoading(false);
+    }
+    const id = selection.current, entry = next.entries.find(entry => entry.id === id);
+    if (id && entry && next.activeId === id && next.openIds.includes(id) && !pending.current) {
+      const resource = cache.current.get(id); cache.current.activate(id);
+      // Already validated cached resources let the remaining reader work even while metadata storage is blocked.
+      if (resource?.documentId === entry.documentId) {
+        const view = entry.view ?? defaultView;
+        displayCurrent({ id, resource, view: { ...view, page: Math.max(1, Math.min(resource.pdf.numPages, view.page)) }, epoch: generation.current });
+        window.document.title = `${resource.name} — Aurelia`;
+      } else void load(id, generation.current);
+    } else if (!id) { cache.current.activate(null); window.document.title = 'Aurelia'; }
+    if (owner && !next.openIds.includes(owner.id) && selection.current !== owner.id) {
+      searches.current.delete(owner.id); snapshots.current.delete(owner.id); cache.current.delete(owner.id);
+    }
+  }
   const persist = useCallback(async (id: string, snapshot: ReaderSnapshot) => {
     snapshots.current.set(id, snapshot); searches.current.set(id, snapshot.search);
-    const entry = state.current?.entries.find(entry => entry.id === id);
-    if (id === 'sample' || !snapshot.documentId || !entry || entry.documentId !== snapshot.documentId) return;
-    await action({ type: 'view', id, view: snapshot.view, documentId: snapshot.documentId });
+    const documentId = snapshot.documentId;
+    if (id === 'sample' || !documentId) return;
+    await action(() => {
+      const entry = state.current?.entries.find(entry => entry.id === id);
+      return entry?.documentId === documentId ? { type: 'view', id, view: snapshot.view, documentId } : null;
+    });
   }, [action]);
   const capture = useCallback(async () => {
     clearTimeout(viewTimer.current); const owner = rendered.current, handle = reader.current;
