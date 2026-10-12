@@ -1,0 +1,42 @@
+# Dependencies and generated output
+node_modules/
+dist/
+dist-electron/
+release/
+.npm-cache/
+.electron-cache/
+test-results/
+playwright-report/
+tmp/
+archive/
+tests/fixtures/references/*.pdf
+public/pdf-assets/
+coverage/
+*.tsbuildinfo
+
+# Local design archive (may contain paper excerpts and personal screenshots)
+/designs/
+
+# Machine configuration, credentials, and reading data
+*.local.json
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+ai-settings.json
+reading-sessions/
+Crashpad/
+*.dmp
+
+# OS and editor files
+*.lnk
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/

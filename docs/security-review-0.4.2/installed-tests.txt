@@ -1,0 +1,54 @@
+
+Running 33 tests using 1 worker
+
+(node:20776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\e2e\ai.spec.ts:72:3 › AI translation and conversation › configures and tests an endpoint while keeping its key encrypted and out of renderer reads (937ms)
+  ok  2 tests\e2e\ai.spec.ts:98:3 › AI translation and conversation › translates an exact PDF selection and copies the streamed translation (1.1s)
+  ok  3 tests\e2e\ai.spec.ts:117:3 › AI translation and conversation › quotes source text in a multi-turn chat and keeps it when collapsing the panel (713ms)
+  ok  4 tests\e2e\ai.spec.ts:138:3 › AI translation and conversation › renders streamed Markdown and local math without loading model-provided images (1.5s)
+  ok  5 tests\e2e\ai.spec.ts:177:3 › AI translation and conversation › handles authentication failures, retries and cancellation without stale answers (565ms)
+  ok  6 tests\e2e\ai.spec.ts:198:3 › AI translation and conversation › guards provider changes, clears stored keys and cancels document-scoped conversations (636ms)
+  ok  7 tests\e2e\annotations.spec.ts:65:3 › paper highlights and notes › creates a left-column note using mouse selection without API configuration (605ms)
+  ok  8 tests\e2e\annotations.spec.ts:83:3 › paper highlights and notes › keeps character geometry aligned through zoom and panel resizing without blocking copying (402ms)
+  ok  9 tests\e2e\annotations.spec.ts:111:3 › paper highlights and notes › supports green highlights, editing, delete undo, and locating the exact source (2.7s)
+  ok 10 tests\e2e\annotations.spec.ts:140:3 › paper highlights and notes › restores notes after restart and rename, isolates papers, and retains cross-page and rotated highlights (2.2s)
+  ok 11 tests\e2e\annotations.spec.ts:168:3 › paper highlights and notes › saves an AI answer to the selected note without replacing the user note (992ms)
+  ok 12 tests\e2e\highlight-gaps.spec.ts:60:3 › continuous highlights over separate PDF word runs › paints one strip per line while preserving selected character bounds, copying, and zoom alignment (568ms)
+  ok 13 tests\e2e\highlight-gaps.spec.ts:93:3 › continuous highlights over separate PDF word runs › restores original fragmented anchors as continuous strips and handles rotated word runs (1.0s)
+  ok 14 tests\e2e\reader.spec.ts:60:3 › desktop PDF reading › opens a local PDF using the desktop bridge (537ms)
+  ok 15 tests\e2e\reader.spec.ts:73:3 › desktop PDF reading › selection endpoint stays on the same line when moving just beyond its last character (239ms)
+  ok 16 tests\e2e\reader.spec.ts:100:3 › desktop PDF reading › reverse selection remains stable above a line at different zoom levels (1.1s)
+  ok 17 tests\e2e\reader.spec.ts:126:3 › desktop PDF reading › mouse selection and Ctrl+C stay inside the left column (256ms)
+  ok 18 tests\e2e\reader.spec.ts:141:3 › desktop PDF reading › reverse drag stays in the right column and optional dehyphenation is explicit (329ms)
+  ok 19 tests\e2e\reader.spec.ts:155:3 › desktop PDF reading › copies only selected characters and can attach the source (134ms)
+  ok 20 tests\e2e\reader.spec.ts:171:3 › desktop PDF reading › resizes, collapses and restores the panel, and selects accurately after zooming (971ms)
+  ok 21 tests\e2e\reader.spec.ts:195:3 › desktop PDF reading › scrolls continuously, jumps pages, and retains text on offscreen pages (206ms)
+  ok 22 tests\e2e\reader.spec.ts:207:3 › desktop PDF reading › reports invalid files without losing the current document (38ms)
+  ok 23 tests\e2e\reader.spec.ts:217:3 › desktop PDF reading › fits both panels at the minimum desktop size and restores the reading page (517ms)
+  ok 24 tests\e2e\reader.spec.ts:235:3 › desktop PDF reading › selects and copies an actual two-column academic paper (895ms)
+  ok 25 tests\e2e\security.spec.ts:22:3 › desktop security boundaries › denies renderer Node access, untrusted IPC and popup windows (332ms)
+  ok 26 tests\e2e\security.spec.ts:52:3 › desktop security boundaries › a second launch focuses the existing window without overwriting its session (268ms)
+  ok 27 tests\e2e\security.spec.ts:71:3 › desktop security boundaries › never forwards an API key to a redirect target (50ms)
+  ok 28 tests\e2e\sessions.spec.ts:87:3 › per-paper reading sessions › isolates same-named papers and restores chat, translation history and drafts when switching (1.9s)
+  ok 29 tests\e2e\sessions.spec.ts:114:3 › per-paper reading sessions › archives conversations and restores them after closing, including a renamed copy of the PDF (1.6s)
+  ok 30 tests\e2e\sessions.spec.ts:139:3 › per-paper reading sessions › keeps partial answers in their original paper when switching during generation (897ms)
+  ok 31 tests\e2e\sessions.spec.ts:151:3 › per-paper reading sessions › flushes both chat and translation on close, restores incomplete status and can retry (1.8s)
+Zoom metrics {
+  blank: false,
+  retained: true,
+  duringSwaps: 0,
+  swaps: 1,
+  width: 2204,
+  height: 2852,
+  density: 2,
+  maxStepMs: 45.29999999888241,
+  settleMs: 174.09999999962747,
+  scale: '1.8',
+  mode: 'full'
+}
+  ok 32 tests\e2e\zoom.spec.ts:38:3 › sharp and responsive zoom › keeps the old bitmap during a zoom burst, reuses text nodes and finishes at native resolution (1.2s)
+Full-page vs tiles { mismatch: 0, ink: 79999 }
+  ok 33 tests\e2e\zoom.spec.ts:89:3 › sharp and responsive zoom › high resolution tiles match full-page rendering across tile seams and remain sharp after scrolling (1.5s)
+
+  33 passed (35.1s)

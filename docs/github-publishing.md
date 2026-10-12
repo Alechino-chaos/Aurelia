@@ -1,0 +1,50 @@
+# 上传 GitHub
+
+提交源码、图标、内置合成示例、测试、文档和锁文件。依赖、构建产物、安装记录、API 配置、个人论文及设计截图由 `.gitignore` 排除；请勿使用 `git add -f` 强行加入这些文件。
+
+## 首次提交
+
+在项目根目录执行。若是全新副本且没有 `.git`，先运行 `git init -b main`。
+
+```powershell
+git status --short
+git add .
+git diff --cached --stat
+git diff --cached
+git commit -m "Initial Aurelia source"
+```
+
+在 GitHub 创建一个空仓库，将下面的 `YOUR_NAME` 与 `YOUR_REPOSITORY` 换成实际名称后执行：
+
+```powershell
+git remote add origin https://github.com/YOUR_NAME/YOUR_REPOSITORY.git
+git push -u origin main
+```
+
+本次整理只准备本地仓库，没有替你创建远程仓库、提交或推送。首次提交前可在本机配置自己的 Git 用户名和邮箱；认证信息不要写入远程 URL 或项目文件。
+
+## 从源码运行
+
+需要 Node.js 22.13+ 和 npm。安装和首次打包需要网络下载依赖及构建工具。
+
+```powershell
+npm ci
+npm run dev
+```
+
+生产构建、测试与打包：
+
+```powershell
+npm run build
+npm test
+npm run test:e2e
+npm run dist
+```
+
+`public/pdf-assets/` 在开发和构建时自动生成；仓库包含内置合成 PDF 示例。可选真实论文样本不在仓库中，缺少时对应测试会跳过。
+
+## 发布程序
+
+`release/Aurelia-0.4.2-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。安装到本机并创建桌面快捷方式，可在打包完成后运行 `./scripts/install-local.ps1`。
+
+仓库尚未指定开源许可证。若计划允许他人修改、再分发，请由项目所有者选择许可证后添加 `LICENSE`。

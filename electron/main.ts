@@ -1,0 +1,172 @@
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu } from 'electron';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { cancelAi, cancelAllAi, getAiSettings, loadAiSettings, runAi, saveAiSettings } from './ai-service.js';
+import { SessionStore } from './session-store.js';
+import { validateRequest } from './ai-protocol.js';
+import type { SessionAction } from './session-types.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+app.setName('Aurelia');
+// Keep the original profile so renaming the app preserves reading history and settings.
+// Explicit profiles (including packaged smoke tests) must remain isolated.
+if (!app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', path.join(app.getPath('appData'), 'paperdesk'));
+if (process.platform === 'win32') app.setAppUserModelId('com.aurelia.reader');
+const developmentUrl = !app.isPackaged ? process.env.PAPERDESK_DEV_URL : undefined;
+if (process.env.PAPERDESK_TEST_DIR && !app.isPackaged) app.setPath('userData', process.env.PAPERDESK_TEST_DIR);
+// One writer per profile: two processes otherwise overwrite each other's sessions.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+let window: BrowserWindow | null = null;
+app.on('second-instance', () => {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show(); window.focus();
+});
+const sessions = new SessionStore(path.join(app.getPath('userData'), 'reading-sessions'), event => {
+  if (window && !window.webContents.isDestroyed()) window.webContents.send('session:save-event', event);
+});
+type Recent = { id: string; name: string; path: string; openedAt: number };
+let recent: Recent[] = [];
+const recentFile = () => path.join(app.getPath('userData'), 'recent.json');
+const productionUrl = pathToFileURL(path.join(here, '../dist/index.html')).href;
+
+async function saveRecent() {
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await writeFile(recentFile(), JSON.stringify(recent, null, 2), 'utf8');
+}
+
+async function openDocument(filePath: string) {
+  if (typeof filePath !== 'string' || path.extname(filePath).toLowerCase() !== '.pdf') throw new Error('请选择 PDF 文件。');
+  const info = await stat(filePath);
+  if (!info.isFile()) throw new Error('这不是一个可读取的文件。');
+  if (info.size > 250 * 1024 * 1024) throw new Error('第一版支持 250 MB 以内的 PDF。请先压缩此文件。');
+  const bytes = await readFile(filePath);
+  if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('文件内容不是有效的 PDF。');
+  const absolute = path.resolve(filePath);
+  const entry: Recent = {
+    id: createHash('sha256').update(absolute).digest('hex').slice(0, 20),
+    name: path.basename(absolute), path: absolute, openedAt: Date.now(),
+  };
+  recent = [entry, ...recent.filter((item) => item.id !== entry.id)].slice(0, 8);
+  await saveRecent().catch(() => { /* Reading still works if the recent list cannot be persisted. */ });
+  return { name: entry.name, bytes: new Uint8Array(bytes), id: entry.id, documentId: createHash('sha256').update(bytes).digest('hex') };
+}
+
+function handle(channel: string, callback: (...args: any[]) => unknown) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const url = event.senderFrame?.url;
+    const trustedUrl = url === productionUrl || (!!developmentUrl && (url === developmentUrl || url === `${developmentUrl}/`));
+    if (!url || !trustedUrl || event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame) {
+      throw new Error('Unsupported sender');
+    }
+    return callback(...args);
+  });
+}
+
+function createWindow() {
+  window = new BrowserWindow({
+    width: 1440, height: 940, minWidth: 960, minHeight: 640,
+    title: 'Aurelia', backgroundColor: '#f6f5f1', show: false,
+    icon: path.join(here, developmentUrl ? '../public/branding/aurelia.ico' : '../dist/branding/aurelia.ico'),
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#eaf0e7', symbolColor: '#253b30', height: 38 },
+    webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  window.once('ready-to-show', () => window?.show());
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  window.webContents.setVisualZoomLevelLimits(1, 1);
+  if (developmentUrl) void window.loadURL(developmentUrl);
+  else void window.loadFile(path.join(here, '../dist/index.html'));
+  window.webContents.on('render-process-gone', cancelAllAi);
+  window.webContents.on('did-start-loading', cancelAllAi);
+  const target = window;
+  let closing = false, canClose = false;
+  target.on('close', event => {
+    if (canClose) return;
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    cancelAllAi();
+    void sessions.close().then(() => { canClose = true; target.close(); }).catch(async () => {
+      const result = await dialog.showMessageBox(target, { type: 'warning', title: '阅读记录尚未保存',
+        message: '阅读记录未能写入本机。', detail: '请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容。',
+        buttons: ['重试保存', '取消关闭', '仍然关闭'], defaultId: 0, cancelId: 1 });
+      closing = false;
+      if (result.response === 0) target.close();
+      else if (result.response === 2) { canClose = true; target.close(); }
+    });
+  });
+  window.on('closed', () => { cancelAllAi(); window = null; });
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: '文件', submenu: [
+      { label: '打开 PDF…', accelerator: 'CmdOrCtrl+O', click: () => window?.webContents.send('open-requested') },
+      { type: 'separator' }, { role: 'quit', label: '退出' },
+    ] },
+    { label: '编辑', submenu: [{ role: 'copy', label: '复制' }, { role: 'selectAll', label: '全选' }] },
+    { label: '视图', submenu: [
+      { role: 'togglefullscreen', label: '全屏' },
+      ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const, label: '开发者工具' }] : []),
+    ] },
+  ]));
+}
+
+void app.whenReady().then(async () => {
+if (!primaryInstance) return;
+await loadAiSettings();
+try {
+  const value: unknown = JSON.parse(await readFile(recentFile(), 'utf8'));
+  if (Array.isArray(value)) recent = value.filter((item): item is Recent =>
+    item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.path === 'string',
+  ).slice(0, 8);
+} catch { /* First launch. */ }
+
+handle('pdf:open', async () => {
+  const result = await dialog.showOpenDialog(window!, { title: '打开学术论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile'] });
+  return result.canceled ? null : openDocument(result.filePaths[0]);
+});
+handle('pdf:recent', () => recent.map(({ id, name, openedAt }) => ({ id, name, openedAt })));
+handle('pdf:open-recent', async (id: unknown) => {
+  const entry = recent.find((item) => item.id === id);
+  if (!entry) throw new Error('未找到这条最近记录，请重新打开文件。');
+  return openDocument(entry.path);
+});
+handle('pdf:open-drop', (filePath: string) => openDocument(filePath));
+handle('clipboard:write', (value: unknown) => {
+  if (typeof value !== 'string' || value.length > 10_000_000) throw new Error('无效的复制内容。');
+  clipboard.writeText(value);
+});
+handle('ai:settings', getAiSettings);
+handle('ai:save-settings', saveAiSettings);
+handle('ai:cancel', cancelAi);
+handle('session:load', (key: string, fileName: string) => sessions.load(key, fileName));
+handle('session:update', (key: string, action: SessionAction) => {
+  if (action?.type === 'new-chat' || action?.type === 'select-chat') for (const id of sessions.pendingIds(key, 'chat')) cancelAi(id);
+  return sessions.update(key, action);
+});
+handle('session:suspend', (key: string) => {
+  for (const id of sessions.pendingIds(key)) cancelAi(id);
+  return sessions.suspend(key);
+});
+handle('session:flush', (key: string) => sessions.flush(key));
+handle('ai:start', (request: unknown, documentId?: string) => {
+  const recipient = window?.webContents;
+  const parsed = validateRequest(request);
+  if (documentId !== undefined && !sessions.hasRequest(documentId, parsed.id, parsed.kind)) throw new Error('这条请求的阅读记录尚未保存，请重试。');
+  return runAi(parsed, event => {
+    if (documentId && sessions.hasRequest(documentId, parsed.id, parsed.kind)) sessions.record(documentId, event);
+    if (recipient && !recipient.isDestroyed()) recipient.send('ai:event', event);
+  }).catch(error => {
+    if (documentId && sessions.hasRequest(documentId, parsed.id, parsed.kind)) sessions.record(documentId, { id: parsed.id, type: 'error', message: error instanceof Error ? error.message : '请求未能开始。' });
+    throw error;
+  });
+});
+createWindow();
+});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('activate', () => { if (primaryInstance && BrowserWindow.getAllWindows().length === 0) createWindow(); });
