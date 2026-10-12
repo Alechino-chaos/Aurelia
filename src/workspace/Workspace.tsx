@@ -29,8 +29,10 @@ export function Workspace() {
   const cache = useRef(new ResourceCache<PdfResource>(resource => { releaseDocumentText(resource.pdf); void resource.pdf.loadingTask.destroy().catch(() => {}); }));
   const publish = useCallback((next: LibraryState) => { state.current = next; if (live.current) setLibrary(next); }, []);
   function ordered<T>(operation: () => Promise<T>): Promise<T> { const next = actions.current.then(operation); actions.current = next.catch(() => {}); return next; }
-  const action = useCallback((operation: LibraryAction) => ordered(async () => {
-    try { const next = await bridge.updateLibrary(operation); publish(next); return next; }
+  const action = useCallback((operation: LibraryAction | (() => LibraryAction | null)) => ordered(async () => {
+    const request = typeof operation === 'function' ? operation() : operation;
+    if (!request) return state.current!;
+    try { const next = await bridge.updateLibrary(request); publish(next); return next; }
     catch (reason) { if (live.current) setNotice(`论文库操作或保存失败：${message(reason)}`); throw reason; }
   }), [bridge, publish]);
   const change = (operation: LibraryAction) => { void action(operation).catch(() => {}); };
@@ -102,7 +104,7 @@ export function Workspace() {
     const ticket = ++generation.current; selection.current = id; cancelPending(); setDrawer(false);
     try {
       await capture(); if (ticket !== generation.current) return;
-      await action({ type: state.current?.openIds.includes(id) ? 'tab-activate' : 'tab-open', id }); if (ticket !== generation.current) return;
+      await action(() => ticket === generation.current ? { type: state.current?.openIds.includes(id) ? 'tab-activate' : 'tab-open', id } : null); if (ticket !== generation.current) return;
       displayCurrent(null); cache.current.activate(id); await load(id, ticket, opened);
     } catch (reason) { if (ticket === generation.current) setNotice(`无法切换论文：${message(reason)}`); }
   }
@@ -113,8 +115,13 @@ export function Workspace() {
     try {
       // Save only this actual reader. Removing an unrelated same-content entry must not stop its active sibling.
       if (rendered.current?.id === id) await capture();
-      await action({ type: remove ? 'entry-remove' : 'tab-close', id });
-      if (!live.current) return;
+      let superseded = false;
+      await action(() => {
+        // Resolve intent at execution, not enqueue time: a newer same-entry reopen wins even behind delayed IPC.
+        if (ticket !== generation.current && selection.current === id) { superseded = true; return null; }
+        return { type: remove ? 'entry-remove' : 'tab-close', id };
+      });
+      if (!live.current || superseded) return;
       // Structural close remains authorized after another selection wins, but its old reader transition does not.
       if (ownsSelection && ticket === generation.current) {
         const nextId = state.current?.activeId ?? null; selection.current = nextId;
@@ -122,8 +129,15 @@ export function Workspace() {
         cache.current.activate(nextId); setLoading(false);
         if (nextId && rendered.current?.id !== nextId) await load(nextId, ticket);
         else if (!nextId) window.document.title = 'Aurelia';
-      } else if (rendered.current?.id === id && selection.current !== id && !state.current?.openIds.includes(id)) {
+      } else if (rendered.current?.id === id && !state.current?.openIds.includes(id)) {
         displayCurrent(null);
+      }
+      // Removal may have committed before a newer click arrived. That ID cannot reopen; recover to authoritative metadata.
+      if (selection.current === id && !state.current?.entries.some(entry => entry.id === id)) {
+        const recoveryTicket = ++generation.current, nextId = state.current?.activeId ?? null;
+        selection.current = nextId; cancelPending(); displayCurrent(null); cache.current.activate(nextId); setLoading(false);
+        setNotice('这篇论文已移出论文库，原 PDF 和笔记仍保留。');
+        if (nextId) await load(nextId, recoveryTicket); else window.document.title = 'Aurelia';
       }
       // A newer reopening may already own this proxy/search memory. Never destroy that resource from a stale close.
       if (!state.current?.openIds.includes(id) && selection.current !== id && rendered.current?.id !== id) {

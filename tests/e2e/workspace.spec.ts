@@ -40,7 +40,12 @@ test.describe('paper library workspace', () => {
     }
     await mkdir(profile, { recursive: true }); await launch();
   });
-  test.afterEach(async () => { await app?.close(); expect(errors).toEqual([]); });
+  test.afterEach(async () => {
+    // Failed race assertions can leave an invalid old reader whose native close prompts about saving.
+    // This isolated synthetic profile may close explicitly during cleanup; behavior checks run before this override.
+    await app?.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 2, checkboxChecked: false }); }).catch(() => {});
+    await app?.close(); expect(errors).toEqual([]);
+  });
 
   test('groups imported papers with real locations and keeps close distinct from remove', async () => {
     const original = await readFile(a);
@@ -251,6 +256,63 @@ test.describe('paper library workspace', () => {
   });
 
   for (const remove of [false, true]) {
+    for (const queued of [false, true]) {
+      test(`newer same-ID activation supersedes ${remove ? 'removal' : 'close'} ${queued ? 'inside the action queue' : 'during capture'}`, async () => {
+        await importFiles([a, b]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
+        const aid = await entry(a).getAttribute('data-library-id');
+        const documentId = (await page.evaluate(() => window.paperdesk!.getLibrary())).entries.find(entry => entry.id === aid)!.documentId!;
+        await app.evaluate(({ ipcMain }, documentId) => {
+          const handlers = (ipcMain as any)._invokeHandlers, suspend = handlers.get('session:suspend'), update = handlers.get('library:update'); let held = false;
+          handlers.set('session:suspend', async (...args: any[]) => {
+            const next = await suspend(...args);
+            if (args[1] === documentId && !held) { held = true; (globalThis as any).sameCaptureHeld = true; await new Promise(resolve => { (globalThis as any).releaseSameCapture = resolve; }); }
+            return next;
+          });
+          handlers.set('library:update', async (...args: any[]) => {
+            const next = await update(...args);
+            if (args[1].type === 'mode' && args[1].mode === 'tabs') { (globalThis as any).sameQueueHeld = true; await new Promise(resolve => { (globalThis as any).releaseSameQueue = resolve; }); }
+            return next;
+          });
+        }, documentId);
+        if (remove) { await entry(a).locator('summary').click(); await entry(a).getByRole('button', { name: '移出论文库' }).click(); await entry(a).locator('summary').click(); }
+        else await entry(a).getByRole('button', { name: `关闭论文 ${a}`, exact: true }).click();
+        await expect.poll(() => app.evaluate(() => !!(globalThis as any).sameCaptureHeld)).toBe(true);
+        if (queued) {
+          await page.getByRole('button', { name: '标签模式' }).click(); await expect.poll(() => app.evaluate(() => !!(globalThis as any).sameQueueHeld)).toBe(true);
+          await app.evaluate(() => (globalThis as any).releaseSameCapture());
+          await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+          await entry(a).locator('.paper-open').click(); await app.evaluate(() => (globalThis as any).releaseSameQueue());
+        } else { await openEntry(a); await app.evaluate(() => (globalThis as any).releaseSameCapture()); }
+        // A later ordered mode action is a queue barrier after the obsolete close continuation.
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        await page.getByRole('button', { name: '文件树模式' }).click(); await expect.poll(async () => (await page.evaluate(() => window.paperdesk!.getLibrary())).mode).toBe('sidebar');
+        await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', aid!); await expect(page.locator('.textLayer').first()).toContainText('Alpha');
+        const next = await page.evaluate(() => window.paperdesk!.getLibrary()); expect(next.activeId).toBe(aid); expect(next.openIds).toContain(aid); expect(next.entries.some(entry => entry.id === aid)).toBe(true);
+      });
+    }
+
+    test(`same-ID selection after committed ${remove ? 'removal' : 'close'} reconciles authoritative ownership`, async () => {
+      await importFiles([a, b]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
+      const aid = await entry(a).getAttribute('data-library-id'), bid = await entry(b).getAttribute('data-library-id');
+      await app.evaluate(({ ipcMain }, { aid, remove }) => {
+        const handlers = (ipcMain as any)._invokeHandlers, update = handlers.get('library:update');
+        handlers.set('library:update', async (...args: any[]) => {
+          const next = await update(...args);
+          if (args[1].id === aid && args[1].type === (remove ? 'entry-remove' : 'tab-close')) { (globalThis as any).sameOperationCommitted = true; await new Promise(resolve => { (globalThis as any).releaseSameOperation = resolve; }); }
+          return next;
+        });
+      }, { aid, remove });
+      if (remove) { await entry(a).locator('summary').click(); await entry(a).getByRole('button', { name: '移出论文库' }).click(); await entry(a).locator('summary').click(); }
+      else await entry(a).getByRole('button', { name: `关闭论文 ${a}`, exact: true }).click();
+      await expect.poll(() => app.evaluate(() => !!(globalThis as any).sameOperationCommitted)).toBe(true);
+      await entry(a).locator('.paper-open').click(); await app.evaluate(() => (globalThis as any).releaseSameOperation());
+      const expected = remove ? bid : aid;
+      await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', expected!);
+      await expect(page.locator('.textLayer').first()).toContainText(remove ? 'Beta' : 'Alpha');
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      const next = await page.evaluate(() => window.paperdesk!.getLibrary()); expect(next.activeId).toBe(expected); expect(next.openIds).toContain(expected); expect(next.entries.some(entry => entry.id === expected)).toBe(true); expect(next.entries.some(entry => entry.id === aid)).toBe(!remove);
+    });
+
     test(`${remove ? 'removing' : 'closing'} a pending activation cannot render its closed paper`, async () => {
       await importFiles([a, b]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
       const aid = await entry(a).getAttribute('data-library-id'), bid = await entry(b).getAttribute('data-library-id');
