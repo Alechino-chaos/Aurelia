@@ -1,6 +1,6 @@
 # Markdown Reading Notes Export
 
-Status: design for user review; implementation has not started.
+Status: design and rendered mockup approved; implementation authorized by “可以，那就按这个来吧，开工”.
 
 ## 需求与方案速读
 
@@ -49,7 +49,7 @@ Use UTF-8 Markdown, LF line endings, and a final newline. The document contains:
 
 Preserve paragraphs, Unicode, formulas, and user Markdown in notes, including lists, emphasis, links, and fenced code blocks. Do not escape or rewrite the user's note body; preserve its Markdown source apart from normalizing line endings. Escape PDF filenames and excerpts as literal text so Markdown headings, links, images, or HTML found in a PDF do not become document structure or embedded content. Preserve original note text as editable Markdown without evaluating it. Do not invent PDF titles, authors, DOI metadata, or clickable application deep links. Displaying formulas depends on the receiving editor's Markdown/math support; export preserves the source rather than converting formulas to images.
 
-An empty session does not produce an empty file. Filename sanitization handles Windows reserved names, invalid characters, trailing dots/spaces, and excessive length; fall back to `reading-notes.md`. Add `.md` when an extension is omitted. Reject another extension with a clear error rather than writing Markdown over a PDF or unrelated file.
+An empty session does not produce an empty file. Filename sanitization handles Windows reserved names, invalid characters, trailing dots/spaces, and excessive length; fall back to `reading-notes.md`. Add `.md` when an extension is omitted, but never replace an existing appended target without native confirmation of that exact target; ask the user to choose the full filename or another name. Reject another extension with a clear error rather than writing Markdown over a PDF or unrelated file.
 
 ## Implementation boundaries
 
@@ -92,4 +92,4 @@ For any authorized GitHub Release, use English release information and attach on
 3. Annotation panel integration and desktop tests for latest edits and document switching.
 4. Regression checks, documentation, packaging, installation, and installed-app verification.
 
-The detailed implementation plan follows user review of this design. Main review points are export scope, output format, and waiting for successful session saves before exporting.
+Implementation and verification are tracked in `../plans/2026-10-13-markdown-notes-export.md`. User-approved review points are export scope, output format, preservation of note Markdown, and the rendered example.

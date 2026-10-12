@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('paperdesk', {
   updateReadingSession: (documentId: string, action: SessionAction) => ipcRenderer.invoke('session:update', documentId, action),
   suspendReadingSession: (documentId: string) => ipcRenderer.invoke('session:suspend', documentId),
   flushReadingSession: (documentId: string) => ipcRenderer.invoke('session:flush', documentId),
+  exportReadingNotes: (documentId: string, fileName: string) => ipcRenderer.invoke('session:export-notes', documentId, fileName),
   onSessionSaveEvent: (callback: (event: SessionSaveEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: SessionSaveEvent) => callback(data);
     ipcRenderer.on('session:save-event', listener);

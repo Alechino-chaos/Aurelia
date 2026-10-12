@@ -45,7 +45,7 @@ npm run dist
 
 ## 发布程序
 
-当前版本为 0.5.0。`release/Aurelia-0.5.0-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。每次版本更新在打包完成后运行 `./scripts/install-local.ps1`，同步更新本机程序和桌面快捷方式，并验证实际安装版本。
+当前版本为 0.6.0。`release/Aurelia-0.6.0-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。Release 标题和说明统一使用英文，只上传便携程序，不上传校验文件或添加校验说明。每次版本更新在打包完成后运行 `./scripts/install-local.ps1`，同步更新本机程序和桌面快捷方式，并验证实际安装版本。
 
 ## 已有仓库的日常更新
 

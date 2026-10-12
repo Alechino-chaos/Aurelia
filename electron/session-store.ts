@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, copyFile, stat } from 'node:fs/prom
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AiEvent } from './ai-types.js';
-import type { ReadingSession, SessionAction, SessionSaveEvent } from './session-types.js';
+import type { Annotation, ReadingSession, SessionAction, SessionSaveEvent } from './session-types.js';
 import { applySessionAction, applySessionEvent, documentKey, emptySession, interruptSession, MAX_SESSION_BYTES, validateSession } from './session-model.js';
 
 type Entry = { data: ReadingSession; revision: number; saved: number; writing?: Promise<void>; timer?: ReturnType<typeof setTimeout> };
@@ -46,6 +46,9 @@ export class SessionStore {
     const entry = this.entries.get(documentKey(key));
     if (!entry) throw new Error('请先打开这篇论文的阅读记录。');
     return entry;
+  }
+  annotationSnapshot(key: string): Annotation[] {
+    return structuredClone(this.entry(key).data.annotations);
   }
   private changed(key: string, data: ReadingSession) {
     const entry = this.entry(key);

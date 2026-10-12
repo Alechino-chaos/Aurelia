@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-10-13
+
+- Export the current paper's highlights and personal notes as one editable Markdown file from the annotations panel.
+- Keep page references, source excerpts, and original note Markdown, including lists, emphasis, code blocks, and formulas.
+- Include AI answers only when explicitly saved into an annotation; exclude other conversations and translations.
+- Wait for pending saves and capture an independent snapshot before the native Save As dialog, preserving the original paper when switching documents.
+- Handle cancellation and write errors without changing reading records or the source PDF; replace existing Markdown files only after a complete write.
+
 ## 0.5.0 — 2026-10-13
 
 - Added local full-document search, including pages that have not been viewed.

@@ -40,7 +40,20 @@ The annotations tab lists entries by page and position:
 - You can undo the most recent deletion. Switching papers clears the undo state.
 - Ask AI about an annotation, then append the response to that note.
 
-Highlights remain aligned as pages are zoomed or resized and support selections across pages. Notes are stored in the reading session. The original PDF is not modified; writing or exporting PDF annotations is not currently supported.
+Highlights remain aligned as pages are zoomed or resized and support selections across pages. Notes are stored in the reading session. The original PDF is not modified; embedding annotations into a PDF is not currently supported.
+
+## Export reading notes
+
+Open the **批注** tab and click **导出笔记**. Choose a location in the Windows Save As dialog to save an editable `.md` file for Obsidian, Typora, or another Markdown editor. The default filename is `<paper>-notes.md`.
+
+- Each file includes the current paper's filename and all annotations, ordered by page and position. Each entry contains its physical PDF page number(s), original excerpt, and a **我的笔记** section when a note is present. Highlights without notes remain included.
+- Notes retain their original Markdown, including emphasis, lists, code blocks, and formulas. Excerpts are escaped as literal source text. Appearance and formula rendering depend on the receiving editor and its theme.
+- AI text appears only if you explicitly saved it into an annotation. Other chats, translations, drafts, API settings, and the original PDF are not exported. Export works offline and makes no AI requests.
+- Export becomes available after the latest notes are saved. If saving failed, use the existing retry action first. The export captures the paper before the save dialog opens; switching documents cannot change that export's content.
+- Cancelling creates no file. Errors leave the reading records unchanged and let you retry. Use the `.md` extension; selecting a different extension is rejected to avoid overwriting a PDF or another file type.
+- The exported file is independent. Editing it does not update Aurelia, and exporting again does not merge those external edits. Choose a new filename if you want to keep both versions.
+
+Exported notes use Chinese structural labels matching the app; excerpts and notes retain their original languages. Export is for editing and sharing, not for restoring Aurelia sessions.
 
 ## Translation and conversations
 

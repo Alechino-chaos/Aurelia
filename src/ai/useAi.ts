@@ -15,6 +15,10 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   const [settingsError, setSettingsError] = useState('');
   const [session, setSession] = useState<ReadingSession | null>(null);
   const sessionRef = useRef<ReadingSession | null>(null);
+  const pendingUpdates = useRef(new Map<string, Set<Promise<void>>>());
+  const currentIdentity = `${documentId ?? ''}/${instance ?? ''}`;
+  const identityRef = useRef(currentIdentity);
+  identityRef.current = currentIdentity;
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saved');
@@ -96,10 +100,27 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
     if (!current || current.documentId !== documentId || !window.paperdesk) return Promise.reject(new Error('阅读记录尚未恢复。'));
     const next = applySessionAction(current, action);
     display(next); setSaveState('saving');
-    return window.paperdesk.updateReadingSession(current.documentId, action).catch(error => {
+    const operation = window.paperdesk.updateReadingSession(current.documentId, action).catch(error => {
       setStorageError({ documentId: current.documentId, message: errorText(error) });
       throw error;
     });
+    const pending = pendingUpdates.current.get(current.documentId) ?? new Set<Promise<void>>();
+    pendingUpdates.current.set(current.documentId, pending); pending.add(operation);
+    const settled = () => { pending.delete(operation); if (!pending.size) pendingUpdates.current.delete(current.documentId); };
+    void operation.then(settled, settled);
+    return operation;
+  }
+  async function exportNotes() {
+    const current = sessionRef.current;
+    if (!sessionReady || !current || current.documentId !== documentId || !window.paperdesk) throw new Error('阅读记录尚未恢复。');
+    if (storageError?.documentId === documentId) throw new Error('请先重试保存阅读记录，再导出笔记。');
+    // IPC responses may settle after the saved notification. Await the actual
+    // update operations rather than relying on that visual status alone.
+    while (pendingUpdates.current.get(current.documentId)?.size) {
+      await Promise.all([...pendingUpdates.current.get(current.documentId)!]);
+    }
+    if (identityRef.current !== currentIdentity) throw new Error('论文已切换，请在当前论文中重新导出。');
+    return window.paperdesk.exportReadingNotes(current.documentId, fileName);
   }
   function change(action: SessionAction) { void commit(action).catch(() => {}); }
   function setDraft(draft: string) {
@@ -190,6 +211,6 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   }
   return { settings, settingsOpen, setSettingsOpen, settingsError, translation, translate, messages,
     draft: chat?.draft ?? '', setDraft, quote: chat?.quote, setQuote, chatBusy, sendChat, retryChat, newChat, stop, save, testConnection,
-    session: visible, sessionReady, sessionLoading, sessionError, saveState, storageError, retrySessionSave, selectChat, selectTranslation, commitSession: commit };
+    session: visible, sessionReady, sessionLoading, sessionError, saveState, storageError, retrySessionSave, selectChat, selectTranslation, commitSession: commit, exportNotes };
 }
 export type AiController = ReturnType<typeof useAi>;

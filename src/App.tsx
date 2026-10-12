@@ -472,7 +472,7 @@ export default function App() {
             <p className="setting-help">默认保留可见连字符。开启后请核对复合词与公式，避免改变原意。</p>
           </details>
         </div>
-        </> : panelTab === 'annotations' ? <AnnotationsPanel key={documentKey} ai={ai} activeId={activeAnnotationId} editRequest={annotationEditRequest} onSelect={setActiveAnnotationId} onLocate={locateAnnotation} onDelete={deleteAnnotation} onUndo={undoAnnotation} undoAvailable={!!deletedAnnotation} onAsk={askAnnotation} /> : <AiPanel ai={ai} tab={panelTab} currentQuote={currentQuote} onPage={goToPage} noteTarget={activeAnnotation?.quote.text} onSaveNote={activeAnnotation ? saveAnswerToAnnotation : undefined} />}
+        </> : panelTab === 'annotations' ? <AnnotationsPanel key={`${documentKey}:${pdf?.loadingTask.docId}`} ai={ai} activeId={activeAnnotationId} editRequest={annotationEditRequest} onSelect={setActiveAnnotationId} onLocate={locateAnnotation} onDelete={deleteAnnotation} onUndo={undoAnnotation} undoAvailable={!!deletedAnnotation} onAsk={askAnnotation} /> : <AiPanel ai={ai} tab={panelTab} currentQuote={currentQuote} onPage={goToPage} noteTarget={activeAnnotation?.quote.text} onSaveNote={activeAnnotation ? saveAnswerToAnnotation : undefined} />}
       </aside></>}
     </main>
     <footer className="statusbar"><div><span className="local-dot" /><span>本地阅读</span><span className="status-separator">/</span><span>{pdf ? `${pdf.numPages} 页` : '尚未打开文档'}</span></div><div>{pdf && <span>{Math.round(scale * 100)}%</span>}<span><TextSelect size={12} /> {autoColumns ? '自动分栏选择' : '原始文本顺序'}</span><span className="status-shortcut">Ctrl C 复制 · Ctrl Shift C 原样复制</span></div></footer>

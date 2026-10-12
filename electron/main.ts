@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cancelAi, cancelAllAi, getAiSettings, loadAiSettings, runAi, saveAiSettings } from './ai-service.js';
 import { SessionStore } from './session-store.js';
 import { validateRequest } from './ai-protocol.js';
+import { exportNotes } from './notes-export.js';
 import type { SessionAction } from './session-types.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -154,6 +155,18 @@ handle('session:suspend', (key: string) => {
   return sessions.suspend(key);
 });
 handle('session:flush', (key: string) => sessions.flush(key));
+let notesExportPending = false;
+handle('session:export-notes', async (key: string, fileName: string) => {
+  if (notesExportPending) throw new Error('已有笔记正在导出，请先完成或取消保存。');
+  notesExportPending = true;
+  try {
+    return await exportNotes(sessions, key, fileName, async suggested => {
+      const result = await dialog.showSaveDialog(window!, { title: '导出阅读笔记', defaultPath: suggested,
+        filters: [{ name: 'Markdown 笔记', extensions: ['md'] }], properties: ['showOverwriteConfirmation'] });
+      return result.canceled ? null : result.filePath ?? null;
+    });
+  } finally { notesExportPending = false; }
+});
 handle('ai:start', (request: unknown, documentId?: string) => {
   const recipient = window?.webContents;
   const parsed = validateRequest(request);

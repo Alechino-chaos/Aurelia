@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, Highlighter, MessageSquare, Pencil, Trash2, Undo2 } from 'lucide-react';
+import { ArrowUpRight, Download, Highlighter, MessageSquare, Pencil, Trash2, Undo2 } from 'lucide-react';
 import type { Annotation } from '../../electron/session-types';
 import type { AiController } from '../ai/useAi';
+import { orderedAnnotations } from '../../electron/notes-markdown';
 
 export function AnnotationsPanel({ ai, activeId, editRequest, onSelect, onLocate, onDelete, onUndo, undoAvailable, onAsk }: {
   ai: AiController; activeId: string | null; editRequest: number;
@@ -10,7 +11,25 @@ export function AnnotationsPanel({ ai, activeId, editRequest, onSelect, onLocate
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
-  const entries = [...(ai.session?.annotations ?? [])].sort((a, b) => a.regions[0].page - b.regions[0].page || a.regions[0].y - b.regions[0].y || a.regions[0].x - b.regions[0].x || a.createdAt - b.createdAt);
+  const [exportState, setExportState] = useState<'idle' | 'pending' | 'saved' | 'error'>('idle');
+  const [exportError, setExportError] = useState('');
+  const exporting = useRef(false), mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const entries = orderedAnnotations(ai.session?.annotations ?? []);
+  const saveFailed = !!ai.sessionError || ai.storageError?.documentId === ai.session?.documentId;
+  async function exportNotes() {
+    if (exporting.current) return;
+    exporting.current = true; setExportState('pending'); setExportError('');
+    try {
+      const result = await ai.exportNotes();
+      if (mounted.current) setExportState(result.status === 'saved' ? 'saved' : 'idle');
+    } catch (error) {
+      if (mounted.current) {
+        setExportState('error');
+        setExportError((error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+      }
+    } finally { exporting.current = false; }
+  }
   useEffect(() => {
     if (editRequest && activeId) setEditing(activeId);
   }, [editRequest]);
@@ -23,7 +42,12 @@ export function AnnotationsPanel({ ai, activeId, editRequest, onSelect, onLocate
   };
   return <div className="annotations-panel">
     <div className="annotations-heading"><span>本篇批注 <span className="annotation-count">{entries.length}</span></span>
-      <span className="annotation-save-state" role="status">{ai.sessionLoading ? '正在恢复…' : ai.sessionError || ai.storageError ? '保存或恢复失败' : !ai.session ? '请打开论文' : ai.saveState === 'saving' ? '正在保存…' : '已保存到本机'}</span></div>
+      <span className="annotation-save-state" role="status">{ai.sessionLoading ? '正在恢复…' : ai.sessionError || ai.storageError ? '保存或恢复失败' : !ai.session ? '请打开论文' : ai.saveState === 'saving' ? '正在保存…' : '已保存到本机'}</span>
+      <button className="notes-export-button" disabled={!ai.sessionReady || !entries.length || ai.saveState !== 'saved' || saveFailed || exportState === 'pending'}
+        title={ai.saveState === 'saving' ? '笔记保存完成后即可导出' : !entries.length ? '添加高亮或批注后即可导出' : '将本篇摘录与笔记保存为 Markdown'}
+        onClick={() => void exportNotes()}><Download size={14} />{exportState === 'pending' ? '正在导出…' : '导出笔记'}</button></div>
+    {exportState === 'saved' && <p className="notes-export-status" role="status">笔记已导出</p>}
+    {exportState === 'error' && <div className="ai-error" role="alert">{exportError}</div>}
     {(ai.sessionError || ai.storageError) && <div className="ai-error" role="alert">{ai.sessionError || ai.storageError?.message}<button className="text-button" onClick={() => void ai.retrySessionSave()}>重试</button></div>}
     {undoAvailable && <button className="annotation-undo" onClick={onUndo}><Undo2 size={14} />撤销删除</button>}
     <div className="annotations-list" ref={list}>

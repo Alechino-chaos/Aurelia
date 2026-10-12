@@ -1,5 +1,5 @@
 import { _electron as electron } from 'playwright';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
@@ -61,10 +61,30 @@ try {
   await search.press('Enter');
   await page.locator('.search-highlight.active').first().waitFor();
   assert.ok(await page.locator('.search-highlight.active').count() > 0);
+  await search.press('Escape');
+  await page.evaluate(() => {
+    const line = Array.from(document.querySelectorAll('[data-page-number="1"] .textLayer [data-line]')).find(e => e.textContent?.includes('representation learning'));
+    const range = document.createRange(); range.selectNodeContents(line);
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+  });
+  await page.getByRole('toolbar', { name: '选区操作' }).getByRole('button', { name: '批注', exact: true }).click();
+  const personalNote = '**My reading note**\n\n- Export keeps this Markdown editable.';
+  await page.getByRole('textbox', { name: '批注笔记' }).fill(personalNote);
+  const notesFile = path.join(profile, 'reading-notes.md');
+  await app.evaluate(({ dialog }, filePath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+  }, notesFile);
+  await page.getByRole('button', { name: '导出笔记', exact: true }).click();
+  await page.getByText('笔记已导出', { exact: true }).waitFor();
+  const exported = await readFile(notesFile, 'utf8');
+  assert.ok(exported.includes(personalNote));
+  assert.ok(exported.includes('第 1 页'));
+  assert.ok(exported.includes('representation learning'));
   await mkdir('release/verification', { recursive: true });
+  await copyFile(notesFile, 'release/verification/notes-export-example.md');
   await page.screenshot({ path: 'release/verification/packaged-reader.png' });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, screenshot: 'release/verification/packaged-reader.png' }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, screenshot: 'release/verification/packaged-reader.png' }, null, 2));
 } finally {
   await app.close();
 }

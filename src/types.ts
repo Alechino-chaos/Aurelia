@@ -1,5 +1,6 @@
 import type { AiEvent, AiRequest, AiSettings, AiSettingsInput } from '../electron/ai-types';
 import type { HighlightRegion, ReadingSession, SessionAction, SessionSaveEvent } from '../electron/session-types';
+import type { NotesExportResult } from '../electron/notes-export';
 export type OpenedFile = { name: string; bytes: Uint8Array; id?: string; documentId?: string };
 export type RecentFile = { name: string; id: string; openedAt: number };
 export type PageSize = { width: number; height: number; rotation?: number };
@@ -26,6 +27,7 @@ declare global {
       updateReadingSession(documentId: string, action: SessionAction): Promise<void>;
       suspendReadingSession(documentId: string): Promise<void>;
       flushReadingSession(documentId: string): Promise<void>;
+      exportReadingNotes(documentId: string, fileName: string): Promise<NotesExportResult>;
       onSessionSaveEvent(callback: (event: SessionSaveEvent) => void): () => void;
       cancelAi(id: string): Promise<void>;
       onAiEvent(callback: (event: AiEvent) => void): () => void;

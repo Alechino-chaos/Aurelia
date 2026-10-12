@@ -87,6 +87,8 @@ If you already have `Aurelia-<version>-portable.exe`, double-click it to launch.
 
 Reading, copying, highlighting, and annotation work without an AI connection.
 
+Use **导出笔记** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).
+
 <a name="connect-your-ai"></a>
 
 ## <img src="docs/images/icons/inline/chat.svg" width="22" height="22" alt="" /> Connect your AI
