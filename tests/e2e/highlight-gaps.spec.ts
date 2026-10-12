@@ -17,7 +17,7 @@ async function launch() {
     args: packaged ? [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'] : [path.join(root, 'dist-electron/main.js'), '--force-device-scale-factor=1'], env });
   page = await app.firstWindow(); page.on('pageerror', e => errors.push(e.message));
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 960));
-  await page.getByRole('heading', { name: '打开论文' }).waitFor();
+  await page.locator('[data-workspace-ready="true"]').waitFor();
   await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, paper);
   await page.getByRole('button', { name: '打开 PDF', exact: true }).click();
   await expect(page.locator('[data-page-number="1"]')).toHaveAttribute('data-text-ready', 'true');

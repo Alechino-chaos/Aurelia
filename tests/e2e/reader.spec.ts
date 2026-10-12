@@ -104,6 +104,11 @@ test.describe.serial('desktop PDF reading', () => {
       await expect(page.locator('[data-page-number="1"]')).toHaveAttribute('data-text-scale', zoom);
       await waitText();
       await page.locator('.reader').evaluate(element => { element.scrollTop = 0; });
+      // Numeric zoom can overflow with the library visible; reveal the right column before dragging.
+      await page.locator('[data-page-number="1"] .textLayer span').filter({ hasText: 'It must not interrupt' }).first().evaluate(span => {
+        const root = span.closest<HTMLElement>('.reader')!, bounds = root.getBoundingClientRect();
+        root.scrollLeft += Math.max(0, span.getBoundingClientRect().right - bounds.right + 24);
+      });
       const top = (await page.locator('[data-page-number="1"] .textLayer span').filter({ hasText: 'RIGHT COLUMN:' }).first().boundingBox())!;
       const bottom = (await page.locator('[data-page-number="1"] .textLayer span').filter({ hasText: 'It must not interrupt' }).first().boundingBox())!;
       await page.mouse.move(bottom.x + bottom.width - .5, bottom.y + bottom.height / 2);
@@ -220,10 +225,11 @@ test.describe.serial('desktop PDF reading', () => {
     await page.getByRole('button', { name: '切换页码导航' }).click();
     await expect(page.getByRole('navigation', { name: '页码导航' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    const oldDocument = await page.locator('.pages').getAttribute('data-document-id');
+    const oldActivation = await page.locator('.workspace-reader-host').getAttribute('data-reader-generation');
     await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, fixture);
     await page.getByRole('button', { name: '打开 PDF', exact: true }).click();
-    await expect(page.locator('.pages')).not.toHaveAttribute('data-document-id', oldDocument!);
+    // Reopening may reuse the cached PDF proxy; wait for the newly activated reader instead.
+    await expect(page.locator('.workspace-reader-host')).not.toHaveAttribute('data-reader-generation', oldActivation!);
     await expect(page.locator('.loading-overlay')).toHaveCount(0);
     await waitText(2);
     await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('2');

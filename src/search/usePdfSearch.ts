@@ -5,11 +5,12 @@ import type { SearchIndex, SearchMatch } from '../pdf/search';
 import { scanPages, type SearchProgress } from './scanPages';
 
 export type SearchNavigation = { match: SearchMatch; serial: number };
+export type SearchMemory = { open: boolean; query: string; caseSensitive: boolean; repairHyphens: boolean };
 const noMatches: SearchMatch[] = [];
 
-export function usePdfSearch(pdf: PDFDocumentProxy | null, autoColumns: boolean) {
-  const [open, setOpen] = useState(false), [query, setQuery] = useState('');
-  const [caseSensitive, setCaseSensitive] = useState(false), [repairHyphens, setRepairHyphens] = useState(false);
+export function usePdfSearch(pdf: PDFDocumentProxy | null, autoColumns: boolean, initial?: SearchMemory) {
+  const [open, setOpen] = useState(initial?.open ?? false), [query, setQuery] = useState(initial?.query ?? '');
+  const [caseSensitive, setCaseSensitive] = useState(initial?.caseSensitive ?? false), [repairHyphens, setRepairHyphens] = useState(initial?.repairHyphens ?? false);
   const [composing, setComposing] = useState(false), [focusVersion, setFocusVersion] = useState(0), [retry, setRetry] = useState(0);
   const [result, setResult] = useState<{ key: string; pdf: PDFDocumentProxy; progress: SearchProgress } | null>(null);
   const [selection, setSelection] = useState<{ key: string; pdf: PDFDocumentProxy; navigation: SearchNavigation } | null>(null);
@@ -31,7 +32,10 @@ export function usePdfSearch(pdf: PDFDocumentProxy | null, autoColumns: boolean)
     return pages;
   }, [matches, open]);
 
+  const previousPdf = useRef(pdf);
   useEffect(() => {
+    if (previousPdf.current === pdf) return;
+    previousPdf.current = pdf;
     setOpen(false); setQuery(''); setResult(null); setSelection(null); setNotice(''); setComposing(false);
   }, [pdf]);
 

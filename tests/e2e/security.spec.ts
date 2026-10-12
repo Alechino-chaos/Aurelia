@@ -37,11 +37,11 @@ test.describe.serial('desktop security boundaries', () => {
       } });
       try {
         await foreign.loadURL(main.webContents.getURL());
-        const result = await foreign.webContents.executeJavaScript('(async () => { if (!window.paperdesk) return { bridge: false }; try { await window.paperdesk.getAiSettings(); return { bridge: true, rejected: false }; } catch { return { bridge: true, rejected: true }; } })()');
+        const result = await foreign.webContents.executeJavaScript('(async () => { if (!window.paperdesk) return { bridge: false }; const denied = async (method) => { try { await method(); return false; } catch { return true; } }; return { bridge: true, rejected: await denied(() => window.paperdesk.getAiSettings()), libraryRejected: await denied(() => window.paperdesk.getLibrary()) }; })()');
         return result;
       } finally { foreign.destroy(); }
     }, preload);
-    expect(rejected).toMatchObject({ bridge: true, rejected: true });
+    expect(rejected).toMatchObject({ bridge: true, rejected: true, libraryRejected: true });
     await page.evaluate(() => { window.open('https://example.invalid/blocked'); });
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
     const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');

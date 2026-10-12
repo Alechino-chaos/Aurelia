@@ -25,6 +25,7 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   const [storageError, setStorageError] = useState<{ documentId: string; message: string } | null>(null);
   const [reload, setReload] = useState(0);
   const requests = useRef<{ chat?: string; translation?: string; test?: string }>({});
+  const prepared = useRef<string | null>(null);
   const testResult = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null);
   const visible = session?.documentId === documentId ? session : null;
   const chat = visible?.chats.find(c => c.id === visible.activeChatId);
@@ -71,6 +72,7 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   useEffect(() => {
     let live = true, loaded = false;
     const bridge = window.paperdesk;
+    prepared.current = null;
     display(null); setSessionError(''); setSaveState('saved');
     setSessionLoading(!!documentId);
     if (documentId && bridge) {
@@ -86,7 +88,7 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
         if (id) void bridge?.cancelAi(id).catch(() => {});
         delete requests.current[kind];
       }
-      if (loaded && documentId) void bridge?.suspendReadingSession(documentId).catch(error => setStorageError({ documentId, message: errorText(error) }));
+      if (loaded && documentId && prepared.current !== documentId) void bridge?.suspendReadingSession(documentId).catch(error => setStorageError({ documentId, message: errorText(error) }));
     };
   }, [documentId, instance, reload]);
 
@@ -121,6 +123,24 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
     }
     if (identityRef.current !== currentIdentity) throw new Error('论文已切换，请在当前论文中重新导出。');
     return window.paperdesk.exportReadingNotes(current.documentId, fileName);
+  }
+  async function prepareToLeave() {
+    const key = documentId, bridge = window.paperdesk;
+    if (!key || !bridge) return;
+    try {
+      while (pendingUpdates.current.get(key)?.size) await Promise.all([...pendingUpdates.current.get(key)!]);
+      for (const kind of ['chat', 'translation'] as const) {
+        const request = requests.current[kind];
+        if (request) await bridge.cancelAi(request);
+        delete requests.current[kind];
+      }
+      // Main owns the streamed bytes and persists interrupted status before the reader is removed.
+      await bridge.suspendReadingSession(key);
+      prepared.current = key;
+    } catch (error) {
+      setStorageError({ documentId: key, message: errorText(error) });
+      throw error;
+    }
   }
   function change(action: SessionAction) { void commit(action).catch(() => {}); }
   function setDraft(draft: string) {
@@ -211,6 +231,6 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   }
   return { settings, settingsOpen, setSettingsOpen, settingsError, translation, translate, messages,
     draft: chat?.draft ?? '', setDraft, quote: chat?.quote, setQuote, chatBusy, sendChat, retryChat, newChat, stop, save, testConnection,
-    session: visible, sessionReady, sessionLoading, sessionError, saveState, storageError, retrySessionSave, selectChat, selectTranslation, commitSession: commit, exportNotes };
+    session: visible, sessionReady, sessionLoading, sessionError, saveState, storageError, retrySessionSave, selectChat, selectTranslation, commitSession: commit, exportNotes, prepareToLeave };
 }
 export type AiController = ReturnType<typeof useAi>;

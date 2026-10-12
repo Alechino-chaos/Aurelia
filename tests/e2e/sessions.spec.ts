@@ -21,7 +21,7 @@ async function launch() {
     args: packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')], cwd: root, env });
   page = await app.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
-  await page.getByRole('heading', { name: '打开论文' }).waitFor();
+  await page.locator('[data-workspace-ready="true"]').waitFor();
 }
 async function open(file: string) {
   await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, file);

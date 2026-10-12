@@ -16,7 +16,7 @@ async function launch() {
     args: packaged ? [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'] : [path.join(root, 'dist-electron/main.js'), '--force-device-scale-factor=1'], env });
   page = await app.firstWindow(); page.on('pageerror', e => errors.push(e.message));
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1586, 992));
-  await page.getByRole('heading', { name: '打开论文' }).waitFor();
+  await page.locator('[data-workspace-ready="true"]').waitFor();
 }
 async function open(file = paper) {
   await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, file);

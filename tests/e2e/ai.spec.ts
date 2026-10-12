@@ -31,7 +31,7 @@ async function launch() {
   app = await electron.launch({ executablePath: packagedExecutable || process.env.PAPERDESK_ELECTRON_PATH, args: packagedExecutable ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')], cwd: root, env });
   page = await app.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
-  await page.getByRole('heading', { name: '打开论文' }).waitFor();
+  await page.locator('[data-workspace-ready="true"]').waitFor();
 }
 test.describe.serial('AI translation and conversation', () => {
   test.beforeAll(async () => {
@@ -218,6 +218,8 @@ test.describe.serial('AI translation and conversation', () => {
     await writeFile(otherPaper, Buffer.concat([await readFile(path.join(root, 'public/examples/reading-demo.pdf')), Buffer.from('\n% distinct paper fixture\n')]));
     await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, otherPaper);
     await page.getByRole('button', { name: '打开 PDF', exact: true }).click();
+    await expect(page.locator('.document-label')).toHaveText('different-paper.pdf');
+    await page.getByRole('tab', { name: '对话', exact: true }).click();
     await expect(page.getByTestId('ai-answer')).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'AI 消息', exact: true })).toHaveValue('');
     await expect(page.getByRole('button', { name: '停止回答' })).toHaveCount(0);
