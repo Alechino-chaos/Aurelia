@@ -12,7 +12,18 @@ export class LibraryStore {
   private revision = 0;
   private saved = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  private readGeneration = 0;
+  private pathReads = new Map<string, number>();
   constructor(private directory: string) { }
+  beginRead(filePath: string): number {
+    const generation = ++this.readGeneration;
+    this.pathReads.set(normalizeLibraryPath(filePath), generation);
+    return generation;
+  }
+  private assertRead(filePath: string, generation?: number) {
+    if (generation !== undefined && this.pathReads.get(normalizeLibraryPath(filePath)) !== generation)
+      throw new Error('论文读取已被更新的请求替代，请重新打开。');
+  }
   private file() { return path.join(this.directory, 'library.json'); }
   private async read(file: string) {
     if ((await stat(file)).size > MAX_BYTES)
@@ -122,9 +133,10 @@ export class LibraryStore {
     path: string;
     name: string;
     documentId: string;
-  }, groupId: string | null = null): Promise<LibraryEntry> {
+  }, groupId: string | null = null, generation?: number): Promise<LibraryEntry> {
     await this.load();
     return this.serialize(async () => {
+      this.assertRead(input.path, generation);
       const canonical = normalizeLibraryPath(input.path);
       if (groupId !== null && !this.state!.groups.some(g => g.id === libraryId(groupId)))
         throw new Error('未找到这个分组。');
@@ -145,12 +157,13 @@ export class LibraryStore {
       return structuredClone(entry);
     });
   }
-  async relocate(id: string, newPath: string, documentId: string): Promise<{
+  async relocate(id: string, newPath: string, documentId: string, generation?: number): Promise<{
     state: LibraryState;
     existingId?: string;
   }> {
     await this.load();
     return this.serialize(async () => {
+      this.assertRead(newPath, generation);
       const data = structuredClone(this.state!), entry = data.entries.find(e => e.id === libraryId(id));
       if (!entry)
         throw new Error('未找到这篇论文。');
@@ -171,9 +184,10 @@ export class LibraryStore {
   async refresh(id: string, input: {
     path: string;
     documentId: string;
-  }): Promise<LibraryEntry> {
+  }, generation?: number): Promise<LibraryEntry> {
     await this.load();
     return this.serialize(async () => {
+      this.assertRead(input.path, generation);
       const data = structuredClone(this.state!), entry = data.entries.find(e => e.id === libraryId(id));
       if (!entry || normalizeLibraryPath(entry.path) !== normalizeLibraryPath(input.path))
         throw new Error('论文条目已改变，请重新打开。');

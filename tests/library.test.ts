@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { applyLibraryAction, emptyLibrary, validateLibrary, normalizeLibraryPath } from '../electron/library-model';
 import { LibraryStore } from '../electron/library-store';
-import { LibraryFiles } from '../electron/library-files';
+import { LibraryFiles, readPdf } from '../electron/library-files';
+import { SessionStore } from '../electron/session-store';
 import type { LibraryAction, LibraryState } from '../electron/library-types';
 
 const hash = 'a'.repeat(64);
 const directories: string[] = [];
 const stores: LibraryStore[] = [];
+const sessionStores: SessionStore[] = [];
 async function setup() {
   const directory = await mkdtemp(path.join(tmpdir(), 'aurelia-library-'));
   directories.push(directory);
@@ -18,6 +20,7 @@ async function setup() {
   return { directory, store, files: new LibraryFiles(store) };
 }
 afterEach(async () => {
+  await Promise.all(sessionStores.splice(0).map(s => s.close().catch(() => {})));
   await Promise.all(stores.splice(0).map(s => s.flush().catch(() => {})));
   await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true })));
 });
@@ -171,4 +174,67 @@ it('strictly rejects nonabsolute paths, wrong extensions, oversized sources and 
   await writeFile(txt,'%PDF-1.7\nvalid bytes');
   for(const file of ['relative.pdf',txt,large])await expect(files.openPath(file)).rejects.toThrow();
   await expect(files.importPaths([txt],'unknown')).rejects.toThrow();
+});
+it('removing an inactive identical copy preserves the active sibling streaming session and flushes it', async () => {
+  const {store,files,directory}=await setup();
+  const a=await store.register({path:'C:\\a.pdf',name:'a.pdf',documentId:hash});
+  const b=await store.register({path:'C:\\b.pdf',name:'b.pdf',documentId:hash});
+  await store.update({type:'tab-open',id:b.id});
+  const sessions=new SessionStore(path.join(directory,'sessions'));sessionStores.push(sessions);
+  const session=await sessions.load(hash,'b.pdf');
+  await sessions.update(hash,{type:'translation',entry:{id:'stream-request',quote:{text:'original',fileName:'b.pdf',pages:[1]},language:'中文',content:'',status:'streaming'}});
+  sessions.record(hash,{id:'stream-request',type:'delta',text:'partial'});
+  await files.remove(a.id,sessions,()=>{throw new Error('active sibling must not cancel');});
+  expect(sessions.pendingIds(hash)).toEqual(['stream-request']);
+  const persisted=JSON.parse(await readFile(path.join(directory,'sessions',`${hash}.json`),'utf8'));
+  expect(persisted.translations[0]).toMatchObject({content:'partial',status:'streaming'});
+  expect((await store.get()).activeId).toBe(b.id);
+  // A failed flush must keep the entry being removed.
+  const c=await store.register({path:'C:\\c.pdf',name:'c.pdf',documentId:hash});
+  await mkdir(path.join(directory,'sessions',`${hash}.json.tmp`));
+  sessions.record(hash,{id:'stream-request',type:'delta',text:' more'});
+  await expect(files.remove(c.id,sessions,()=>{})).rejects.toThrow();
+  expect((await store.get()).entries.some(e=>e.id===c.id)).toBe(true);
+  await rm(path.join(directory,'sessions',`${hash}.json.tmp`),{recursive:true});
+});
+it('removing the active entry still interrupts and saves its original session', async () => {
+  const {store,files,directory}=await setup();
+  const a=await store.register({path:'C:\\a.pdf',name:'a.pdf',documentId:hash});
+  await store.update({type:'tab-open',id:a.id});
+  const sessions=new SessionStore(path.join(directory,'sessions'));sessionStores.push(sessions);
+  await sessions.load(hash,'a.pdf');
+  await sessions.update(hash,{type:'translation',entry:{id:'stream-request',quote:{text:'original',fileName:'a.pdf',pages:[1]},language:'中文',content:'',status:'streaming'}});
+  sessions.record(hash,{id:'stream-request',type:'delta',text:'partial'});
+  await files.remove(a.id,sessions,()=>{});
+  expect(sessions.pendingIds(hash)).toEqual([]);
+  expect(JSON.parse(await readFile(path.join(directory,'sessions',`${hash}.json`),'utf8')).translations[0].status).toBe('interrupted');
+});
+it.each(['openPath','open','importPaths'] as const)('rejects a delayed older %s read without reverting newer same-path identity/view', async mode => {
+  const {store,files,directory}=await setup();
+  const source=path.join(directory,'replacement.pdf');
+  await writeFile(source,'%PDF-1.7\nold original');
+  const original=await files.openPath(source);
+  let start!:()=>void,release!:()=>void,reads=0;
+  const started=new Promise<void>(resolve=>{start=resolve;});
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const delayed=new LibraryFiles(store,async file=>{
+    const pdf=await readPdf(file);
+    if(++reads===1){start();await gate;}
+    return pdf;
+  });
+  const old=mode==='openPath'?delayed.openPath(source):mode==='open'?delayed.open(original.libraryId):delayed.importPaths([source]);
+  await started;
+  await writeFile(source,'%PDF-1.7\nnew replacement');
+  const newer=await delayed.openPath(source);
+  expect(newer.documentId).not.toBe(original.documentId);
+  await store.update({type:'view',id:newer.libraryId,documentId:newer.documentId,view:{page:42,zoom:2,anchorY:.6}});
+  release();
+  if(mode==='importPaths')expect((await old as Awaited<ReturnType<LibraryFiles['importPaths']>>).errors).toHaveLength(1);
+  else await expect(old).rejects.toThrow('读取已被更新');
+  const entry=await store.entry(newer.libraryId);
+  expect(entry.documentId).toBe(newer.documentId);expect(entry.view).toMatchObject({page:42,zoom:2,anchorY:.6});
+  expect((await store.get()).entries).toHaveLength(1);
+  await store.flush();
+  const restored=await new LibraryStore(directory).load();
+  expect(restored.entries[0]).toMatchObject({documentId:newer.documentId,view:{page:42,zoom:2,anchorY:.6}});
 });

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { LibraryStore } from './library-store.js';
 import { libraryId, normalizeLibraryPath } from './library-model.js';
 import type { LibraryImportResult, LibraryOpenedFile, LibraryRelocateResult } from './library-types.js';
-async function readPdf(filePath: unknown) {
+import type { SessionStore } from './session-store.js';
+export async function readPdf(filePath: unknown) {
   normalizeLibraryPath(filePath);
   const absolute = path.win32.normalize(filePath as string);
   if (path.win32.extname(absolute).toLowerCase() !== '.pdf')
@@ -38,13 +39,15 @@ async function readPdf(filePath: unknown) {
 }
 export class LibraryFiles {
   private relocationCandidates = new Map<string, string>();
-  constructor(private store: LibraryStore) { }
+  constructor(private store: LibraryStore, private reader: typeof readPdf = readPdf) { }
   async openPath(filePath: string): Promise<LibraryOpenedFile> {
-    const pdf = await readPdf(filePath), entry = await this.store.register(pdf);
+    const generation = this.store.beginRead(filePath);
+    const pdf = await this.reader(filePath), entry = await this.store.register(pdf, null, generation);
     return { name: entry.name, bytes: pdf.bytes, id: createHash('sha256').update(entry.path).digest('hex').slice(0, 20), documentId: pdf.documentId, libraryId: entry.id, view: entry.view };
   }
   async open(id: string): Promise<LibraryOpenedFile> {
-    const previous = await this.store.entry(id), pdf = await readPdf(previous.path), entry = await this.store.refresh(id, pdf);
+    const previous = await this.store.entry(id), generation = this.store.beginRead(previous.path);
+    const pdf = await this.reader(previous.path), entry = await this.store.refresh(id, pdf, generation);
     return { name: entry.name, bytes: pdf.bytes, id: createHash('sha256').update(entry.path).digest('hex').slice(0, 20), documentId: pdf.documentId, libraryId: entry.id, view: entry.view };
   }
   async importPaths(paths: string[], groupId?: string): Promise<LibraryImportResult> {
@@ -56,9 +59,10 @@ export class LibraryFiles {
     const importedIds: string[] = [], errors: LibraryImportResult['errors'] = [];
     for (const filePath of paths) {
       try {
-        const pdf = await readPdf(filePath), before = await this.store.get();
+        const generation = this.store.beginRead(filePath);
+        const pdf = await this.reader(filePath), before = await this.store.get();
         const existing = before.entries.some(e => normalizeLibraryPath(e.path) === normalizeLibraryPath(pdf.path));
-        const entry = await this.store.register(pdf, groupId ?? null);
+        const entry = await this.store.register(pdf, groupId ?? null, generation);
         if (!existing)
           importedIds.push(entry.id);
       }
@@ -69,13 +73,13 @@ export class LibraryFiles {
     return { state: await this.store.get(), importedIds, errors };
   }
   async relocate(id: string, filePath: string): Promise<LibraryRelocateResult> {
-    const entry = await this.store.entry(id), pdf = await readPdf(filePath);
+    const entry = await this.store.entry(id), generation = this.store.beginRead(filePath), pdf = await this.reader(filePath);
     this.relocationCandidates.delete(id);
     if (entry.documentId !== null && entry.documentId !== pdf.documentId) {
       this.relocationCandidates.set(id, pdf.path);
       return { state: await this.store.get(), outcome: 'mismatch', candidateName: pdf.name };
     }
-    const result = await this.store.relocate(id, pdf.path, pdf.documentId);
+    const result = await this.store.relocate(id, pdf.path, pdf.documentId, generation);
     return { ...result, outcome: result.existingId ? 'existing' : 'relocated' };
   }
   async acceptRelocationImport(id: string): Promise<LibraryImportResult> {
@@ -89,5 +93,23 @@ export class LibraryFiles {
   async reveal(id: string, reveal: (filePath: string) => void): Promise<void> {
     const entry = await this.store.entry(id);
     reveal(entry.path);
+  }
+  async remove(id: string, sessions: SessionStore, cancel: (requestId: string) => void) {
+    const state = await this.store.get(), entry = state.entries.find(e => e.id === libraryId(id));
+    if (!entry) throw new Error('未找到这篇论文。');
+    if (entry.documentId) {
+      let pending: string[] = [], loaded = false;
+      try { pending = sessions.pendingIds(entry.documentId); loaded = true; }
+      catch { /* An inactive paper may never have loaded its session. */ }
+      const activeSibling = state.entries.find(e => e.id === state.activeId && e.id !== id && e.documentId === entry.documentId);
+      if (activeSibling) {
+        // Sessions belong to content; removing a display copy must not stop its active sibling.
+        if (loaded) await sessions.flush(entry.documentId);
+      } else {
+        for (const requestId of pending) cancel(requestId);
+        await sessions.suspend(entry.documentId);
+      }
+    }
+    return this.store.update({ type: 'entry-remove', id });
   }
 }

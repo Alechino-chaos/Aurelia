@@ -160,13 +160,7 @@ handle('library:update', async (action: LibraryAction) => {
   // Validate before performing side effects, including session interruption on remove.
   applyLibraryAction(current, action);
   if (action.type === 'entry-remove') {
-    const entry = await library.entry(action.id);
-    if (entry.documentId) {
-      let pending: string[] = [];
-      try { pending = sessions.pendingIds(entry.documentId); } catch { /* An inactive paper may never have loaded its session. */ }
-      for (const id of pending) cancelAi(id);
-      await sessions.suspend(entry.documentId);
-    }
+    return libraryFiles.remove(action.id, sessions, cancelAi);
   }
   return library.update(action);
 });
