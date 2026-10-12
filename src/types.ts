@@ -1,7 +1,9 @@
 import type { AiEvent, AiRequest, AiSettings, AiSettingsInput } from '../electron/ai-types';
 import type { HighlightRegion, ReadingSession, SessionAction, SessionSaveEvent } from '../electron/session-types';
 import type { NotesExportResult } from '../electron/notes-export';
-export type OpenedFile = { name: string; bytes: Uint8Array; id?: string; documentId?: string };
+import type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView } from '../electron/library-types';
+export type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView, LibraryEntry, LibraryGroup } from '../electron/library-types';
+export type OpenedFile = { name: string; bytes: Uint8Array; id?: string; documentId?: string; libraryId?: string; view?: ReadingView };
 export type RecentFile = { name: string; id: string; openedAt: number };
 export type PageSize = { width: number; height: number; rotation?: number };
 export type SelectedText = {
@@ -19,6 +21,15 @@ declare global {
       getRecent(): Promise<RecentFile[]>;
       openRecent(id: string): Promise<OpenedFile>;
       openDropped(file: File): Promise<OpenedFile>;
+      getLibrary(): Promise<LibraryState>;
+      updateLibrary(action: LibraryAction): Promise<LibraryState>;
+      importPapers(groupId?: string): Promise<LibraryImportResult>;
+      importDroppedPapers(files: File[], groupId?: string): Promise<LibraryImportResult>;
+      openLibraryPaper(id: string): Promise<OpenedFile>;
+      relocateLibraryPaper(id: string): Promise<LibraryRelocateResult>;
+      acceptRelocationImport(id: string): Promise<LibraryImportResult>;
+      revealLibraryPaper(id: string): Promise<void>;
+      onBeforeClose(callback: () => Promise<void>): () => void;
       writeClipboard(text: string): Promise<void>;
       getAiSettings(): Promise<AiSettings>;
       saveAiSettings(settings: AiSettingsInput): Promise<AiSettings>;

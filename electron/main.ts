@@ -1,6 +1,6 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu } from 'electron';
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { cancelAi, cancelAllAi, getAiSettings, loadAiSettings, runAi, saveAiSettings } from './ai-service.js';
@@ -8,6 +8,10 @@ import { SessionStore } from './session-store.js';
 import { validateRequest } from './ai-protocol.js';
 import { exportNotes } from './notes-export.js';
 import type { SessionAction } from './session-types.js';
+import { LibraryStore } from './library-store.js';
+import { LibraryFiles } from './library-files.js';
+import { applyLibraryAction } from './library-model.js';
+import type { LibraryAction } from './library-types.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 app.setName('Aurelia');
@@ -29,6 +33,22 @@ app.on('second-instance', () => {
 const sessions = new SessionStore(path.join(app.getPath('userData'), 'reading-sessions'), event => {
   if (window && !window.webContents.isDestroyed()) window.webContents.send('session:save-event', event);
 });
+const library = new LibraryStore(app.getPath('userData'));
+const libraryFiles = new LibraryFiles(library);
+let closeCaptureEnabled = false;
+let pendingCloseCapture: { token: string; complete: (error?: string) => void } | undefined;
+async function captureBeforeClose(target: BrowserWindow) {
+  if (!closeCaptureEnabled || target.webContents.isDestroyed()) return;
+  await new Promise<void>((resolve, reject) => {
+    const token = randomUUID();
+    const timer = setTimeout(() => { pendingCloseCapture = undefined; reject(new Error('阅读位置尚未确认保存。')); }, 5000);
+    pendingCloseCapture = { token, complete: error => {
+      clearTimeout(timer); pendingCloseCapture = undefined;
+      if (error) reject(new Error(error)); else resolve();
+    } };
+    target.webContents.send('library:before-close', token);
+  });
+}
 type Recent = { id: string; name: string; path: string; openedAt: number };
 let recent: Recent[] = [];
 const recentFile = () => path.join(app.getPath('userData'), 'recent.json');
@@ -40,20 +60,14 @@ async function saveRecent() {
 }
 
 async function openDocument(filePath: string) {
-  if (typeof filePath !== 'string' || path.extname(filePath).toLowerCase() !== '.pdf') throw new Error('请选择 PDF 文件。');
-  const info = await stat(filePath);
-  if (!info.isFile()) throw new Error('这不是一个可读取的文件。');
-  if (info.size > 250 * 1024 * 1024) throw new Error('第一版支持 250 MB 以内的 PDF。请先压缩此文件。');
-  const bytes = await readFile(filePath);
-  if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('文件内容不是有效的 PDF。');
-  const absolute = path.resolve(filePath);
+  const opened = await libraryFiles.openPath(filePath);
+  const registered = await library.entry(opened.libraryId);
   const entry: Recent = {
-    id: createHash('sha256').update(absolute).digest('hex').slice(0, 20),
-    name: path.basename(absolute), path: absolute, openedAt: Date.now(),
+    id: opened.id, name: opened.name, path: registered.path, openedAt: Date.now(),
   };
   recent = [entry, ...recent.filter((item) => item.id !== entry.id)].slice(0, 8);
   await saveRecent().catch(() => { /* Reading still works if the recent list cannot be persisted. */ });
-  return { name: entry.name, bytes: new Uint8Array(bytes), id: entry.id, documentId: createHash('sha256').update(bytes).digest('hex') };
+  return opened;
 }
 
 function handle(channel: string, callback: (...args: any[]) => unknown) {
@@ -94,16 +108,16 @@ function createWindow() {
     if (closing) return;
     closing = true;
     cancelAllAi();
-    void sessions.close().then(() => { canClose = true; target.close(); }).catch(async () => {
+    void captureBeforeClose(target).then(() => Promise.all([sessions.close(), library.flush()])).then(() => { canClose = true; target.close(); }).catch(async () => {
       const result = await dialog.showMessageBox(target, { type: 'warning', title: '阅读记录尚未保存',
-        message: '阅读记录未能写入本机。', detail: '请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容。',
+        message: '阅读记录或论文库未能写入本机。', detail: '请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容和阅读位置。',
         buttons: ['重试保存', '取消关闭', '仍然关闭'], defaultId: 0, cancelId: 1 });
       closing = false;
       if (result.response === 0) target.close();
       else if (result.response === 2) { canClose = true; target.close(); }
     });
   });
-  window.on('closed', () => { cancelAllAi(); window = null; });
+  window.on('closed', () => { cancelAllAi(); closeCaptureEnabled = false; pendingCloseCapture?.complete('窗口已经关闭。'); window = null; });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: '文件', submenu: [
       { label: '打开 PDF…', accelerator: 'CmdOrCtrl+O', click: () => window?.webContents.send('open-requested') },
@@ -126,6 +140,8 @@ try {
     item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.path === 'string',
   ).slice(0, 8);
 } catch { /* First launch. */ }
+// Keep the window usable for a visible recovery error; getLibrary continues to reject protected files.
+await library.load(recent).catch(() => {});
 
 handle('pdf:open', async () => {
   const result = await dialog.showOpenDialog(window!, { title: '打开学术论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile'] });
@@ -138,6 +154,43 @@ handle('pdf:open-recent', async (id: unknown) => {
   return openDocument(entry.path);
 });
 handle('pdf:open-drop', (filePath: string) => openDocument(filePath));
+handle('library:get', () => library.get());
+handle('library:update', async (action: LibraryAction) => {
+  const current = await library.get();
+  // Validate before performing side effects, including session interruption on remove.
+  applyLibraryAction(current, action);
+  if (action.type === 'entry-remove') {
+    const entry = await library.entry(action.id);
+    if (entry.documentId) {
+      let pending: string[] = [];
+      try { pending = sessions.pendingIds(entry.documentId); } catch { /* An inactive paper may never have loaded its session. */ }
+      for (const id of pending) cancelAi(id);
+      await sessions.suspend(entry.documentId);
+    }
+  }
+  return library.update(action);
+});
+handle('library:import', async (groupId?: string) => {
+  const result = await dialog.showOpenDialog(window!, { title: '导入论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
+  return libraryFiles.importPaths(result.canceled ? [] : result.filePaths, groupId);
+});
+handle('library:import-drop', (filePaths: string[], groupId?: string) => libraryFiles.importPaths(filePaths, groupId));
+handle('library:open', (id: string) => libraryFiles.open(id));
+handle('library:relocate', async (id: string) => {
+  await library.entry(id);
+  const result = await dialog.showOpenDialog(window!, { title: '重新定位论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile'] });
+  return result.canceled ? { state: await library.get(), outcome: 'canceled' } : libraryFiles.relocate(id, result.filePaths[0]);
+});
+handle('library:accept-relocation-import', (id: string) => libraryFiles.acceptRelocationImport(id));
+handle('library:reveal', (id: string) => libraryFiles.reveal(id, filePath => shell.showItemInFolder(filePath)));
+handle('library:close-listener', (enabled: unknown) => {
+  if (typeof enabled !== 'boolean') throw new Error('无效的关闭通知设置。');
+  closeCaptureEnabled = enabled;
+});
+handle('library:close-captured', (token: unknown, error?: unknown) => {
+  if (typeof token !== 'string' || (error !== undefined && (typeof error !== 'string' || error.length > 2000))) throw new Error('无效的关闭确认。');
+  if (pendingCloseCapture?.token === token) pendingCloseCapture.complete(error as string | undefined);
+});
 handle('clipboard:write', (value: unknown) => {
   if (typeof value !== 'string' || value.length > 10_000_000) throw new Error('无效的复制内容。');
   clipboard.writeText(value);
