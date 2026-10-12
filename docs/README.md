@@ -1,41 +1,40 @@
-# Aurelia 目录说明
+# Repository layout
 
-## 源码仓库
+## Source files
 
-| 位置 | 用途 |
+| Location | Purpose |
 | --- | --- |
-| `src/` | React 界面、PDF 渲染、文本选择及 AI 面板 |
-| `electron/` | 桌面主进程、隔离接口、AI 请求和本地会话 |
-| `public/branding/` | 应用图标及生成说明 |
-| `public/examples/` | 自行生成的双栏 PDF 示例 |
-| `scripts/` | 开发、构建、打包、安装和验证脚本 |
-| `tests/` | 单元与 Electron 端到端测试 |
-| `docs/` | 维护说明和安全检查记录 |
-| `package.json`、`package-lock.json` | 项目命令与锁定依赖 |
-| 根目录其他配置文件 | TypeScript、Vite、Vitest、Playwright 与 Git 配置 |
-| `如何启动.txt` | 已安装用户的启动及操作说明 |
+| `src/` | React interface, PDF rendering, selection, and AI panels |
+| `electron/` | Desktop main process, isolated bridge, AI requests, and local sessions |
+| `public/branding/` | Application icons and asset notes |
+| `public/examples/` | Generated two-column PDF sample |
+| `scripts/` | Development, build, packaging, installation, and verification tools |
+| `tests/` | Unit and Electron end-to-end tests |
+| `docs/` | Reading and development guides, visual assets, and review records |
+| `package.json`, `package-lock.json` | Project commands and pinned dependencies |
+| Root configuration files | TypeScript, Vite, Vitest, Playwright, and Git settings |
 
-## 本地保留、不提交
+## Local files excluded from Git
 
-以下内容已由 `.gitignore` 排除，克隆源码时不会自带。
+These files are excluded by `.gitignore` and are not included in a fresh clone.
 
-| 位置 | 用途与恢复方式 |
+| Location | Purpose and recovery |
 | --- | --- |
-| `node_modules/` | 依赖；运行 `npm ci` 安装 |
-| `public/pdf-assets/` | PDF.js 离线资源；开发或构建时自动复制 |
-| `dist/`、`dist-electron/` | 生产构建；运行 `npm run build` 生成 |
-| `release/` | 打包输出；运行 `npm run dist` 生成。便携包可上传至 GitHub Releases |
-| `tmp/`、`test-results/`、`playwright-report/` | 临时配置与测试结果；按需生成 |
-| `designs/` | 本地设计方案、历史截图和验收资料，可能含论文摘录 |
-| `tests/fixtures/references/*.pdf` | 可选的外部论文测试样本，获取方式见该目录 README |
-| `*.local.json` | 本机安装记录和 Electron 运行时路径 |
+| `node_modules/` | Dependencies; install with `npm ci` |
+| `public/pdf-assets/` | PDF.js offline assets; prepared automatically during development or builds |
+| `dist/`, `dist-electron/` | Production output; generate with `npm run build` |
+| `release/` | Packaged applications; generate with `npm run dist` and distribute through GitHub Releases |
+| `tmp/`, `test-results/`, `playwright-report/` | Temporary profiles and test output; generated as needed |
+| `designs/` | Local design explorations and historical screenshots, which may contain paper excerpts |
+| `tests/fixtures/references/*.pdf` | Optional external paper fixtures |
+| `*.local.json` | Machine-specific installation records and Electron runtime paths |
 
-本次清理移除了旧构建、解包副本和测试输出；保留本机依赖、最新便携包和历史设计资料。根目录原 `design-qa.md` 已归档至 `designs/annotations/design-qa.md`。
+The README uses curated assets in `docs/images/`. Those assets are included in Git, unlike the local design archive.
 
-## 已安装程序与个人记录
+## Installed application and personal data
 
-桌面 `Aurelia.lnk` 指向独立安装的程序，实际位置记录在 `.aurelia-install.local.json`。默认目录为 `%LOCALAPPDATA%\Programs\Aurelia\`，可用安装脚本的 `-ApplicationRoot` 参数指定其他磁盘；后续更新沿用已记录的位置。清理工作区构建产物不会影响此程序。
+The desktop shortcut points to an independently installed application. Its actual path is recorded in `.aurelia-install.local.json`. The first-install default is `%LOCALAPPDATA%\Programs\Aurelia\`; use the install script's `-ApplicationRoot` parameter to select another drive. Later updates reuse the recorded location. Removing workspace build output does not affect the installed application.
 
-个人 API 设置、最近文件及阅读会话在 `%APPDATA%\paperdesk\`，不属于源码仓库。请勿将此目录复制进项目或上传。根目录 `*.local.json` 继续保留供本机脚本使用。
+Personal API settings, recent files, and reading sessions are stored in `%APPDATA%\paperdesk\`, outside the source repository. Do not copy that directory into the project or upload it. Machine-local JSON records remain available to local scripts.
 
-开发命令见 [项目 README](../README.md)，提交步骤见 [GitHub 提交说明](github-publishing.md)。
+See [Development](development.md) for commands and [Publishing to GitHub](github-publishing.md) for repository upload instructions (Chinese).
