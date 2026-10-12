@@ -2,9 +2,25 @@
 
 Status: design for user review; implementation has not started.
 
+## 需求与方案速读
+
+已确认的需求：
+
+- 首要用途是自己整理和复习，主要使用 Obsidian、Typora；分享给别人是第二用途。
+- 导出原文摘录、页码和自己的批注，包括已经主动存入批注的 AI 回答。其他翻译和聊天记录不自动导出。
+- 批注里的 Markdown 原样保留，包括列表、加粗、代码块和公式；不重新生成或改写笔记内容。
+
+推荐的使用方式：一篇论文导出一个 `.md` 文件，按批注面板的页码和位置顺序排列。没有笔记的高亮也保留。点击“导出笔记”，选择位置即可；如果最新笔记还在保存，就先等待保存完成。导出的文件可以独立编辑，再次导出不会自动合并外部修改。
+
+推荐沿用现有技术：React 负责按钮与提示，TypeScript 负责把批注整理为 Markdown，Electron 与 Node.js 负责系统保存窗口和写文件。无需新框架、服务器或 AI 调用。所谓“快照”是固定本次导出的数据，避免保存过程中切换论文导致内容混杂。
+
+默认沿用中文界面：导出结构标题使用“原文摘录”“我的笔记”“第 N 页”；摘录与笔记保持原来的语言。公开发布说明继续使用英文。第一版输出可编辑的 Markdown；另加 PDF 分享格式、自动同步和备份恢复均留待后续需求。
+
+主要验收条件：刚写下的笔记不遗漏，不同论文不混杂，格式可继续编辑，取消不生成文件，写入失败不损坏已有文件。
+
 ## Purpose and scope
 
-The user approved prioritizing one-click Markdown export of the current paper's highlights and notes, and requested planning before the update. Success means that a reader can finish annotating a paper and save a complete, editable document with clear page references without manually copying individual annotations.
+The user approved prioritizing one-click Markdown export of the current paper's highlights and notes, and requested planning before the update. The primary purpose is personal organization and review in Obsidian and Typora; sharing is secondary. Backup and restore are outside this feature. Success means that a reader can finish annotating a paper and save a complete, editable document with clear page references without manually copying individual annotations.
 
 This is a medium-sized feature spanning the annotation panel, the existing Electron bridge, and local file saving. It reuses existing reading sessions, adds no dependencies, and does not change the session schema. The proposed feature version is 0.6.0.
 
@@ -19,7 +35,7 @@ Export all annotations for the current paper. Include highlights without notes a
 5. Report success only after the write completes. Cancellation is silent; a write failure displays a retryable error without changing annotations.
 6. If the paper changes during the operation, the export retains the original paper's snapshot; do not display its completion or error on the new paper's panel.
 
-Keep the existing Chinese application interface. Generated Markdown structural labels use English, consistent with the public documentation; quoted text and user notes retain their original languages.
+Keep the existing Chinese application interface. Generated Markdown structural labels use Chinese to match that interface; quoted text and user notes retain their original languages. The user's English-only publishing preference applies to public release information, not to private exported notes.
 
 ## Export format
 
@@ -28,10 +44,10 @@ Use UTF-8 Markdown, LF line endings, and a final newline. The document contains:
 - A title derived from the current PDF filename, without its `.pdf` suffix.
 - The source filename and total annotation count. Do not expose absolute local paths or internal session IDs.
 - Numbered annotation sections ordered exactly as the annotation panel: first region page, y, x, then creation time. Preserve input order for ties.
-- A `Page` or `Pages` label with sorted, unique, 1-based physical PDF page numbers; these are not printed page labels. A cross-page annotation remains one entry and lists every source page.
-- An `Excerpt` block containing the complete quoted text, followed by a `Note` block only if the note contains non-whitespace content.
+- A page label such as `第 3 页` or `第 3、4 页` with sorted, unique, 1-based physical PDF page numbers; these are not printed page labels. A cross-page annotation remains one entry and lists every source page.
+- An `原文摘录` block containing the complete quoted text, followed by a `我的笔记` block only if the note contains non-whitespace content.
 
-Preserve paragraphs, Unicode, formulas, and user Markdown in notes. Escape PDF filenames and excerpts as literal text so Markdown headings, links, images, or HTML found in a PDF do not become document structure or embedded content. Preserve original note text as editable Markdown without evaluating it. Do not invent PDF titles, authors, DOI metadata, or clickable application deep links.
+Preserve paragraphs, Unicode, formulas, and user Markdown in notes, including lists, emphasis, links, and fenced code blocks. Do not escape or rewrite the user's note body; preserve its Markdown source apart from normalizing line endings. Escape PDF filenames and excerpts as literal text so Markdown headings, links, images, or HTML found in a PDF do not become document structure or embedded content. Preserve original note text as editable Markdown without evaluating it. Do not invent PDF titles, authors, DOI metadata, or clickable application deep links. Displaying formulas depends on the receiving editor's Markdown/math support; export preserves the source rather than converting formulas to images.
 
 An empty session does not produce an empty file. Filename sanitization handles Windows reserved names, invalid characters, trailing dots/spaces, and excessive length; fall back to `reading-notes.md`. Add `.md` when an extension is omitted. Reject another extension with a clear error rather than writing Markdown over a PDF or unrelated file.
 
