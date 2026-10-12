@@ -411,7 +411,8 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
       if (!reader.current) return;
-      const top = reader.current.getBoundingClientRect().top + 100;
+      // Use the same visible-page boundary as persisted viewport capture.
+      const top = reader.current.getBoundingClientRect().top + 24;
       const pages = Array.from(reader.current.querySelectorAll<HTMLElement>('.pdf-page'));
       const current = pages.find(page => page.getBoundingClientRect().bottom > top);
       if (current) setActivePage(Number(current.dataset.pageNumber));

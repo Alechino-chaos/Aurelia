@@ -22,6 +22,8 @@ export function Workspace() {
   const [password, setPassword] = useState(''), [passwordPrompt, setPasswordPrompt] = useState(''), [mismatch, setMismatch] = useState<{ id: string; name: string } | null>(null);
   const reader = useRef<ReaderHandle>(null), rendered = useRef<Current | null>(null); rendered.current = current;
   const actions = useRef<Promise<unknown>>(Promise.resolve()), generation = useRef(0), pending = useRef<PDFDocumentLoadingTask | null>(null);
+  // Requested selection is immediate; persisted metadata can still be awaiting an IPC response.
+  const selection = useRef<string | null>(null);
   const passwordCallback = useRef<((value: string) => void) | null>(null), live = useRef(true);
   const searches = useRef(new Map<string, SearchMemory>()), snapshots = useRef(new Map<string, ReaderSnapshot>()), viewTimer = useRef(0);
   const cache = useRef(new ResourceCache<PdfResource>(resource => { releaseDocumentText(resource.pdf); void resource.pdf.loadingTask.destroy().catch(() => {}); }));
@@ -32,6 +34,7 @@ export function Workspace() {
     catch (reason) { if (live.current) setNotice(`论文库操作或保存失败：${message(reason)}`); throw reason; }
   }), [bridge, publish]);
   const change = (operation: LibraryAction) => { void action(operation).catch(() => {}); };
+  function displayCurrent(next: Current | null) { rendered.current = next; setCurrent(next); setPagesNavigation(false); }
   const persist = useCallback(async (id: string, snapshot: ReaderSnapshot) => {
     snapshots.current.set(id, snapshot); searches.current.set(id, snapshot.search);
     const entry = state.current?.entries.find(entry => entry.id === id);
@@ -41,29 +44,32 @@ export function Workspace() {
   const capture = useCallback(async () => {
     clearTimeout(viewTimer.current); const owner = rendered.current, handle = reader.current;
     if (!owner || !handle) return;
-    await persist(owner.id, handle.capture()); await handle.suspend(); window.getSelection()?.removeAllRanges();
+    await persist(owner.id, handle.capture()); await handle.suspend();
+    if (rendered.current === owner) window.getSelection()?.removeAllRanges();
   }, [persist]);
   const recordView = useCallback((snapshot: ReaderSnapshot) => {
     const owner = rendered.current;
-    if (!owner || owner.resource.documentId !== snapshot.documentId) return;
+    if (!owner || owner.id !== current?.id || owner.epoch !== current?.epoch || owner.resource.documentId !== snapshot.documentId) return;
     snapshots.current.set(owner.id, snapshot); searches.current.set(owner.id, snapshot.search); clearTimeout(viewTimer.current);
     viewTimer.current = window.setTimeout(() => { void persist(owner.id, snapshot).catch(reason => { if (live.current) setNotice(`阅读位置保存失败：${message(reason)}`); }); }, 200);
-  }, [persist]);
+  }, [persist, current?.id, current?.epoch]);
   function cancelPending() { const task = pending.current; pending.current = null; if (task) void task.destroy().catch(() => {}); passwordCallback.current = null; setPasswordPrompt(''); }
   async function load(id: string, ticket: number, opened?: OpenedFile) {
-    if (ticket !== generation.current) return;
+    const ownsSelection = () => live.current && ticket === generation.current && selection.current === id
+      && (id === 'sample' || !!state.current?.openIds.includes(id) && state.current.activeId === id);
+    if (!ownsSelection()) return;
     setLoading(true); setErrors(old => { const next = { ...old }; delete next[id]; return next; });
     try {
       const previousIdentity = snapshots.current.get(id)?.documentId ?? state.current?.entries.find(entry => entry.id === id)?.documentId;
       const file = opened ?? await bridge.openLibraryPaper(id);
-      if (ticket !== generation.current || !live.current) return;
+      if (!ownsSelection()) return;
       const refreshed = await bridge.getLibrary();
-      if (ticket !== generation.current || !live.current) return;
+      if (!ownsSelection()) return;
       // A read refreshes this entry's identity/view. It does not own workspace activation.
       const entry = refreshed.entries.find(entry => entry.id === id);
       if (entry && state.current) publish({ ...state.current, entries: state.current.entries.map(old => old.id === id ? entry : old) });
       const documentId = file.documentId ?? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(file.bytes)))).map(byte => byte.toString(16).padStart(2, '0')).join('');
-      if (ticket !== generation.current) return;
+      if (!ownsSelection()) return;
       let resource = cache.current.get(id);
       if (resource && resource.documentId !== documentId) { cache.current.delete(id); resource = undefined; }
       if (previousIdentity && previousIdentity !== documentId) { searches.current.delete(id); snapshots.current.delete(id); }
@@ -71,42 +77,62 @@ export function Workspace() {
         const byteLength = file.bytes.byteLength, task = loadPdf(new Uint8Array(file.bytes)); pending.current = task;
         task.onPassword = (update: (value: string) => void, reason: number) => { if (ticket === generation.current) { passwordCallback.current = update; setPassword(''); setPasswordPrompt(reason === 2 ? '密码不正确，请重试' : '此 PDF 需要密码'); } };
         const pdf = await task.promise;
-        if (ticket !== generation.current || !live.current) { void task.destroy().catch(() => {}); return; }
+        if (!ownsSelection()) { void task.destroy().catch(() => {}); return; }
         const sizes = [];
         for (let start = 1; start <= pdf.numPages; start += 12) {
           sizes.push(...await Promise.all(Array.from({ length: Math.min(12, pdf.numPages - start + 1) }, async (_, offset) => { const page = await pdf.getPage(start + offset), view = page.getViewport({ scale: 1 }); return { width: view.width, height: view.height, rotation: view.rotation }; })));
-          if (ticket !== generation.current || !live.current) { void task.destroy().catch(() => {}); return; }
+          if (!ownsSelection()) { void task.destroy().catch(() => {}); return; }
         }
         resource = { pdf, sizes, name: file.name, documentId, bytes: byteLength }; pending.current = null;
         cache.current.activate(id); cache.current.put(id, resource);
       } else cache.current.activate(id);
-      if (ticket !== generation.current) return;
-      let view = file.view;
+      if (!ownsSelection()) return;
+      // Legacy Open reads before outgoing capture; use the acknowledged latest entry view after that capture.
+      let view = entry?.documentId === documentId ? entry.view : file.view;
       if (!view) {
         let page = 1;
         try { const old = JSON.parse(localStorage.getItem(`paperdesk:position:${resource.pdf.fingerprints[0]}`) ?? '1'); if (typeof old === 'number' && Number.isFinite(old)) page = old; } catch { /* Invalid legacy position uses first page. */ }
         view = { ...defaultView, page: Math.max(1, Math.min(resource.pdf.numPages, page)) };
       } else view = { ...view, page: Math.max(1, Math.min(resource.pdf.numPages, view.page)) };
-      setCurrent({ id, resource, view, epoch: ticket }); window.document.title = `${file.name} — Aurelia`;
+      displayCurrent({ id, resource, view, epoch: ticket }); window.document.title = `${file.name} — Aurelia`;
     } catch (reason) { if (ticket === generation.current && live.current) { setErrors(old => ({ ...old, [id]: `无法打开论文：${message(reason)}` })); cancelPending(); } }
     finally { if (ticket === generation.current && live.current) { setLoading(false); setPasswordPrompt(''); } }
   }
   async function activate(id: string, opened?: OpenedFile) {
-    const ticket = ++generation.current; cancelPending(); setDrawer(false);
+    const ticket = ++generation.current; selection.current = id; cancelPending(); setDrawer(false);
     try {
       await capture(); if (ticket !== generation.current) return;
       await action({ type: state.current?.openIds.includes(id) ? 'tab-activate' : 'tab-open', id }); if (ticket !== generation.current) return;
-      setCurrent(null); cache.current.activate(id); await load(id, ticket, opened);
+      displayCurrent(null); cache.current.activate(id); await load(id, ticket, opened);
     } catch (reason) { if (ticket === generation.current) setNotice(`无法切换论文：${message(reason)}`); }
   }
   async function close(id: string, remove = false) {
+    const ownsSelection = selection.current === id || selection.current === null && state.current?.activeId === id;
+    const ticket = ownsSelection ? ++generation.current : generation.current;
+    if (ownsSelection) { selection.current = null; cancelPending(); }
     try {
-      const active = state.current?.activeId === id; let ticket = generation.current;
-      if (active) { ticket = ++generation.current; cancelPending(); await capture(); }
-      const next = await action({ type: remove ? 'entry-remove' : 'tab-close', id });
-      searches.current.delete(id); snapshots.current.delete(id); cache.current.delete(id);
-      if (active) { setCurrent(null); if (next.activeId) await load(next.activeId, ticket); else { cache.current.activate(null); window.document.title = 'Aurelia'; } }
-    } catch (reason) { setNotice(`无法${remove ? '移出' : '关闭'}论文，记录尚未保存：${message(reason)}`); }
+      // Save only this actual reader. Removing an unrelated same-content entry must not stop its active sibling.
+      if (rendered.current?.id === id) await capture();
+      await action({ type: remove ? 'entry-remove' : 'tab-close', id });
+      if (!live.current) return;
+      // Structural close remains authorized after another selection wins, but its old reader transition does not.
+      if (ownsSelection && ticket === generation.current) {
+        const nextId = state.current?.activeId ?? null; selection.current = nextId;
+        if (rendered.current?.id !== nextId) displayCurrent(null);
+        cache.current.activate(nextId); setLoading(false);
+        if (nextId && rendered.current?.id !== nextId) await load(nextId, ticket);
+        else if (!nextId) window.document.title = 'Aurelia';
+      } else if (rendered.current?.id === id && selection.current !== id && !state.current?.openIds.includes(id)) {
+        displayCurrent(null);
+      }
+      // A newer reopening may already own this proxy/search memory. Never destroy that resource from a stale close.
+      if (!state.current?.openIds.includes(id) && selection.current !== id && rendered.current?.id !== id) {
+        searches.current.delete(id); snapshots.current.delete(id); cache.current.delete(id);
+      }
+    } catch (reason) {
+      if (live.current) setNotice(`无法${remove ? '移出' : '关闭'}论文，记录尚未保存：${message(reason)}`);
+      if (ownsSelection && ticket === generation.current) selection.current = rendered.current?.id ?? state.current?.activeId ?? null;
+    }
   }
   async function imports(result: LibraryImportResult, ticket?: number) {
     const next = await ordered(async () => { const fresh = await bridge.getLibrary(); publish(fresh); return fresh; });
@@ -118,7 +144,7 @@ export function Workspace() {
   async function openData(file: OpenedFile, expected = generation.current) {
     if (expected !== generation.current) return;
     if (file.libraryId) { await ordered(async () => publish(await bridge.getLibrary())); if (expected === generation.current) await activate(file.libraryId, file); return; }
-    const ticket = ++generation.current; cancelPending(); await capture(); setCurrent(null); await load('sample', ticket, file);
+    const ticket = ++generation.current; selection.current = 'sample'; cancelPending(); await capture(); if (ticket !== generation.current) return; displayCurrent(null); await load('sample', ticket, file);
   }
   async function readRequest(read: () => Promise<OpenedFile | null>) {
     const ticket = ++generation.current; cancelPending(); setLoading(false);
@@ -136,7 +162,7 @@ export function Workspace() {
   }
   useEffect(() => {
     live.current = true; const ticket = ++generation.current;
-    void bridge.getLibrary().then(next => { if (live.current && ticket === generation.current) { publish(next); if (next.activeId) void load(next.activeId, ticket); } }).catch(reason => { if (live.current) setFatal(message(reason)); });
+    void bridge.getLibrary().then(next => { if (live.current && ticket === generation.current) { publish(next); selection.current = next.activeId; if (next.activeId) void load(next.activeId, ticket); } }).catch(reason => { if (live.current) setFatal(message(reason)); });
     return () => { live.current = false; generation.current++; clearTimeout(viewTimer.current); void pending.current?.destroy().catch(() => {}); pending.current = null; cache.current.clear(); };
   }, []);
   const closingCapture = useRef(capture); closingCapture.current = capture;

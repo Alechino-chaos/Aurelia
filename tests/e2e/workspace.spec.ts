@@ -118,12 +118,15 @@ test.describe('paper library workspace', () => {
 
   test('saves sidebar width and collapsed groups and keeps page navigation separate', async () => {
     await page.getByRole('button', { name: '新建分组' }).click(); await page.getByRole('textbox', { name: '分组名称' }).fill('Saved group'); await page.getByRole('button', { name: '保存分组' }).click();
-    await importFiles([a]); await loaded('paper.pdf'); await page.getByRole('button', { name: '收起分组 Saved group' }).click();
+    await importFiles([a, b]); await loaded('paper.pdf'); await page.getByRole('button', { name: '收起分组 Saved group' }).click();
     const separator = page.getByRole('separator', { name: '调整论文库宽度' }); await separator.focus(); await page.keyboard.press('ArrowRight');
     await expect.poll(async () => (await page.evaluate(() => window.paperdesk!.getLibrary())).sidebarWidth).toBe(280);
     await page.getByRole('button', { name: '切换页码导航' }).click(); await expect(page.getByRole('navigation', { name: '页码导航' })).toBeVisible();
-    await page.getByRole('button', { name: '论文库', exact: true }).click(); await expect(page.getByRole('button', { name: '展开分组 Saved group' })).toBeVisible(); await page.getByRole('button', { name: '关闭论文库' }).click();
-    await page.getByRole('button', { name: '切换页码导航' }).click(); await app.close(); await launch(); await loaded('paper.pdf');
+    await page.getByRole('button', { name: '论文库', exact: true }).click(); await expect(page.getByRole('button', { name: '展开分组 Saved group' })).toBeVisible();
+    await page.getByRole('button', { name: '展开分组 Saved group' }).click(); await openEntry(b);
+    await expect(page.getByRole('navigation', { name: '页码导航' })).toHaveCount(0); await expect(page.getByRole('navigation', { name: '论文库列表' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '论文库', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: '收起分组 Saved group' }).click(); await app.close(); await launch(); await loaded('paper.pdf');
     await expect(page.getByRole('button', { name: '展开分组 Saved group' })).toBeVisible(); await expect(page.getByRole('separator', { name: '调整论文库宽度' })).toHaveAttribute('aria-valuenow', '280');
     await expect(entry(a)).toHaveCount(0); await page.getByRole('button', { name: '展开分组 Saved group' }).click(); await expect(entry(a)).toBeVisible();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 920));
@@ -246,4 +249,50 @@ test.describe('paper library workspace', () => {
     await expect.poll(async () => { const bounds = await activeTab.boundingBox(); return bounds ? bounds.x + bounds.width : Infinity; }).toBeLessThanOrEqual(820);
     await page.getByRole('button', { name: `关闭论文 ${files[7]}`, exact: true }).click(); await loaded(path.basename(files[6]));
   });
+
+  for (const remove of [false, true]) {
+    test(`${remove ? 'removing' : 'closing'} a pending activation cannot render its closed paper`, async () => {
+      await importFiles([a, b]); await loaded('paper.pdf'); await openEntry(b); await openEntry(a);
+      const aid = await entry(a).getAttribute('data-library-id'), bid = await entry(b).getAttribute('data-library-id');
+      await app.evaluate(({ ipcMain }, bid) => {
+        const handlers = (ipcMain as any)._invokeHandlers, original = handlers.get('library:update');
+        handlers.set('library:update', async (...args: any[]) => {
+          const next = await original(...args);
+          if (args[1].type === 'tab-activate' && args[1].id === bid) { (globalThis as any).activationAccepted = true; await new Promise(resolve => { (globalThis as any).releaseActivation = resolve; }); }
+          return next;
+        });
+      }, bid);
+      await entry(b).locator('.paper-open').click(); await expect.poll(() => app.evaluate(() => !!(globalThis as any).activationAccepted)).toBe(true);
+      if (remove) { await entry(b).locator('summary').click(); await entry(b).getByRole('button', { name: '移出论文库' }).click(); }
+      else await entry(b).getByRole('button', { name: `关闭论文 ${b}`, exact: true }).click();
+      await app.evaluate(() => (globalThis as any).releaseActivation());
+      await expect.poll(async () => (await page.evaluate(() => window.paperdesk!.getLibrary())).openIds.includes(bid!)).toBe(false);
+      await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', aid!); await expect(page.locator('.textLayer').first()).toContainText('Alpha');
+      const next = await page.evaluate(() => window.paperdesk!.getLibrary()); expect(next.activeId).toBe(aid); expect(next.entries.some(entry => entry.id === bid)).toBe(!remove);
+    });
+
+    test(`stale active ${remove ? 'removal' : 'close'} completion preserves a newer reader`, async () => {
+      await importFiles([a, b, c]); await loaded('paper.pdf'); await openEntry(b); await openEntry(c); await openEntry(a);
+      const aid = await entry(a).getAttribute('data-library-id'), cid = await entry(c).getAttribute('data-library-id');
+      const documentId = (await page.evaluate(() => window.paperdesk!.getLibrary())).entries.find(entry => entry.id === aid)!.documentId!;
+      await app.evaluate(({ ipcMain }, documentId) => {
+        const handlers = (ipcMain as any)._invokeHandlers, original = handlers.get('session:suspend'); let held = false;
+        handlers.set('session:suspend', async (...args: any[]) => {
+          const next = await original(...args);
+          if (args[1] === documentId && !held) { held = true; (globalThis as any).closeCaptureAccepted = true; await new Promise(resolve => { (globalThis as any).releaseCloseCapture = resolve; }); }
+          return next;
+        });
+      }, documentId);
+      if (remove) { await entry(a).locator('summary').click(); await entry(a).getByRole('button', { name: '移出论文库' }).click(); }
+      else await entry(a).getByRole('button', { name: `关闭论文 ${a}`, exact: true }).click();
+      await expect.poll(() => app.evaluate(() => !!(globalThis as any).closeCaptureAccepted)).toBe(true);
+      await openEntry(c);
+      await page.evaluate(() => { const range = document.createRange(); range.selectNodeContents(document.querySelector('.textLayer span')!); window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range); });
+      await app.evaluate(() => (globalThis as any).releaseCloseCapture());
+      await expect.poll(async () => (await page.evaluate(() => window.paperdesk!.getLibrary())).openIds.includes(aid!)).toBe(false);
+      await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', cid!); await expect(page.locator('.textLayer').first()).toContainText('Gamma');
+      expect((await page.evaluate(() => window.paperdesk!.getLibrary())).activeId).toBe(cid);
+      expect(await page.evaluate(() => window.getSelection()!.toString())).toContain('Gamma');
+    });
+  }
 });
