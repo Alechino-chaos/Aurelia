@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — 2026-10-13
+
+- Organize explicitly imported PDFs in persistent, manually named groups, with actual folder locations visible beside each paper.
+- Switch between a library sidebar and scrollable reading tabs; use the library drawer in tabs mode and keep page navigation independently available.
+- Restore open papers, active paper, reading positions, zoom, panel state, sidebar width and collapsed groups after restart; load inactive papers only when selected.
+- Keep each paper's search in memory while switching, save the outgoing paper's notes and stop its active AI request, and preserve independent navigation for same-content copies.
+- Close reading tabs without removing library entries; move or remove entries and delete groups without moving or deleting source PDFs or saved notes.
+- Reveal files in Explorer and relocate missing PDFs with matching content; offer changed files as separate imports and retain unavailable entries.
+- Add Ctrl+Tab, Ctrl+Shift+Tab and Ctrl+W, reliable rapid activation and close handling, bounded PDF resource retention, and protected recovery for damaged library metadata.
+
+Groups have one level. Search queries reset on restart or tab closure. The library does not scan folders or sync to a cloud service.
+
 ## 0.6.0 — 2026-10-13
 
 - Export the current paper's highlights and personal notes as one editable Markdown file from the annotations panel.

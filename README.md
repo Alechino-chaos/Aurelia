@@ -85,6 +85,10 @@ If you already have `Aurelia-<version>-portable.exe`, double-click it to launch.
 2. **Select a passage.** Use the selection toolbar to copy, translate, ask a question, highlight, or annotate.
 3. **Keep your thoughts.** Continue the conversation or write a note in the side panel. Your records are saved locally with that paper.
 
+Use **导入论文** to add several PDFs to a manually named group. The library shows each paper's actual folder; groups organize entries without moving files. Choose **文件树模式** for the sidebar or **标签模式** for reading tabs, with **论文库** opening the grouped drawer when needed. Your open papers and each paper's reading position, zoom and panel state return after restart.
+
+Closing a tab keeps the paper in the library. Removing an entry or deleting a group leaves the original PDF and saved notes intact. Use **在文件夹中显示** to find a source file, or **重新定位** if it has moved. Matching content retains the existing reading state; different content can be imported as another paper.
+
 Reading, copying, highlighting, and annotation work without an AI connection.
 
 Use **导出笔记** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).
@@ -116,6 +120,7 @@ Aurelia supports the Chat Completions protocol. Providers that offer only Respon
 - <img src="docs/images/icons/inline/quote.svg" width="16" height="16" alt="" /> **You choose the text to send.** Translation sends the selection. Conversations send your question, conversation history, and passages you explicitly attach. Connection tests send a test message.
 - <img src="docs/images/icons/inline/key.svg" width="16" height="16" alt="" /> **API keys are encrypted at rest.** On Windows, keys are protected with system DPAPI encryption. Aurelia refuses to save them as plaintext when system encryption is unavailable.
 - <img src="docs/images/icons/inline/history.svg" width="16" height="16" alt="" /> **Reading history is stored locally.** Conversations, translations, and annotations are saved as unencrypted JSON. The original PDF is not modified.
+- <img src="docs/images/icons/inline/folder.svg" width="16" height="16" alt="" /> **Your library is local.** Groups, file paths and workspace state are saved in `library.json` in the application data directory. Back up this metadata with your reading records; keep the source PDFs available at their registered locations.
 
 AI requests are processed by the provider you configure. See [Data and backups](docs/reading-guide.md#data-and-backups) for storage locations, backup guidance, and security boundaries.
 
@@ -126,6 +131,8 @@ AI requests are processed by the provider you configure. See [Data and backups](
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+O` | Open a PDF |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous open paper |
+| `Ctrl+W` | Close the active paper, keeping its library entry |
 | `Ctrl+F` | Search the current PDF |
 | `Enter` / `Shift+Enter` in search | Next / previous match |
 | `Esc` in search | Close search and clear search highlights |
@@ -143,6 +150,8 @@ Double-click the divider between the reader and side panel to restore the defaul
 ## <img src="docs/images/icons/inline/scope.svg" width="22" height="22" alt="" /> Current boundaries
 
 Aurelia is under active development. It supports PDFs up to 250 MB. Scanned documents can be viewed, but OCR is not yet available. Complex columns, tables, and unusual fonts may require checking the selection preview or switching to the original PDF text order.
+
+The library manages explicitly imported PDFs in one-level groups. Folder scanning, nested groups, split reading and cloud sync are not included. Search queries survive paper switches in the current workspace, then reset on restart or tab closure. Switching papers stops an active AI request and saves the content received so far.
 
 Annotations are saved within Aurelia and cannot yet be written back to, or exported as, PDF annotations. AI conversations use the text you supply; full-document retrieval is not yet implemented. See the [Reading guide](docs/reading-guide.md) for details.
 

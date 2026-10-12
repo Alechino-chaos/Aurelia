@@ -1,4 +1,4 @@
-import { _electron as electron } from 'playwright';
+import { _electron as electron, expect } from '@playwright/test';
 import { readFile, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -7,10 +7,16 @@ const install = JSON.parse((await readFile('.aurelia-install.local.json', 'utf8'
 const expectedVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
 const profile = path.resolve(`tmp/packaged-smoke-${Date.now()}`);
 await mkdir(profile, { recursive: true });
+const firstPaper = path.join(profile, 'papers', 'first', 'reading-demo.pdf');
+const secondPaper = path.join(profile, 'papers', 'second', 'reading-demo.pdf');
+for (const file of [firstPaper, secondPaper]) {
+  await mkdir(path.dirname(file), { recursive: true });
+  await copyFile(path.resolve('public/examples/reading-demo.pdf'), file);
+}
 const environment = { ...process.env };
 delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.PAPERDESK_DEV_URL;
-const app = await electron.launch({
+const launch = () => electron.launch({
   executablePath: install.executablePath,
   // Match the desktop E2E harness: coordinate-driven mouse drags need a fixed
   // scale on Windows. Native high-DPI rendering is covered by zoom.spec.ts.
@@ -18,8 +24,10 @@ const app = await electron.launch({
   env: environment,
   timeout: 30_000,
 });
+let app = await launch();
+const errors = [];
 try {
-  const page = await app.firstWindow();
+  let page = await app.firstWindow();
   const runtime = await app.evaluate(({ app }) => ({ name: app.getName(), version: app.getVersion(), packaged: app.isPackaged, appPath: app.getAppPath(), userData: app.getPath('userData') }));
   assert.equal(runtime.name, 'Aurelia');
   assert.equal(runtime.version, expectedVersion);
@@ -28,16 +36,20 @@ try {
   assert.ok(runtime.appPath.endsWith('app.asar'));
   assert.equal(path.resolve(runtime.userData).toLowerCase(), profile.toLowerCase());
   assert.ok(page.url().startsWith('file:///'));
-  const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.getByRole('heading', { name: '打开论文' }).waitFor();
   assert.equal(await page.title(), 'Aurelia');
   assert.equal(await page.locator('.brand > span').first().textContent(), 'Aurelia');
   assert.equal(await page.locator('.brand-icon').evaluate(img => img.complete && img.naturalWidth > 0), true);
-  await app.evaluate(({ dialog }, filePath) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
-  }, path.resolve('public/examples/reading-demo.pdf'));
-  await page.getByRole('button', { name: '打开 PDF', exact: true }).click();
+  // Use the actual library controls and native-picker import path. Two copies
+  // share notes by content but must keep separate paths and reading positions.
+  await page.getByRole('button', { name: '新建分组', exact: true }).click({ timeout: 10_000 });
+  await page.getByRole('textbox', { name: '分组名称' }).fill('Packaged reading');
+  await page.getByRole('button', { name: '保存分组' }).click();
+  await app.evaluate(({ dialog }, files) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: files });
+  }, [firstPaper, secondPaper]);
+  await page.getByRole('button', { name: '导入论文', exact: true }).click();
   await page.locator('[data-page-number="1"][data-text-ready="true"] canvas').waitFor();
   assert.equal(await page.locator('.pdf-page').count(), 3);
   assert.equal(await page.title(), 'reading-demo.pdf — Aurelia');
@@ -83,8 +95,54 @@ try {
   await mkdir('release/verification', { recursive: true });
   await copyFile(notesFile, 'release/verification/notes-export-example.md');
   await page.screenshot({ path: 'release/verification/packaged-reader.png' });
+  const entries = await page.evaluate(() => window.paperdesk.getLibrary());
+  assert.equal(entries.entries.length, 2);
+  assert.equal(entries.groups[0].name, 'Packaged reading');
+  assert.ok(entries.entries.every(entry => entry.groupId === entries.groups[0].id));
+  const firstId = entries.entries.find(entry => entry.path === firstPaper).id;
+  const secondId = entries.entries.find(entry => entry.path === secondPaper).id;
+  const setPage = async number => {
+    const input = page.getByRole('textbox', { name: '页码', exact: true });
+    await input.fill(String(number)); await input.press('Enter');
+    await expect(input).toHaveValue(String(number));
+  };
+  await setPage(3);
+  await page.getByRole('combobox', { name: '缩放比例' }).selectOption('1.25');
+  await page.getByRole('button', { name: '打开论文 ' + secondPaper, exact: true }).click();
+  await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', secondId);
+  await page.locator('[data-page-number="1"][data-text-ready="true"] canvas').waitFor();
+  await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('1');
+  await setPage(2);
+  await page.getByRole('combobox', { name: '缩放比例' }).selectOption('1');
+  await page.getByRole('button', { name: '标签模式', exact: true }).click();
+  const tabs = page.getByRole('tablist', { name: '打开的论文' });
+  await expect(tabs.getByRole('tab')).toHaveCount(2);
+  await tabs.getByRole('tab', { name: '打开论文 ' + firstPaper, exact: true }).click();
+  await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', firstId);
+  await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('3');
+  await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1.25');
+  await page.screenshot({ path: 'release/verification/packaged-workspace.png' });
+  // Native close flushes the latest workspace and session. Relaunch the exact
+  // installed binary against the same disposable profile to prove persistence.
+  await app.close(); app = await launch(); page = await app.firstWindow();
+  page.on('pageerror', error => errors.push(error.message));
+  await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', firstId);
+  await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('3');
+  await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1.25');
+  await expect(page.getByRole('tablist', { name: '打开的论文' }).getByRole('tab')).toHaveCount(2);
+  const restored = await page.evaluate(() => window.paperdesk.getLibrary());
+  assert.equal(restored.mode, 'tabs');
+  assert.equal(restored.activeId, firstId);
+  assert.deepEqual(restored.openIds, [firstId, secondId]);
+  assert.equal(restored.groups[0].name, 'Packaged reading');
+  await page.getByRole('tab', { name: '打开论文 ' + secondPaper, exact: true }).click();
+  await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', secondId);
+  await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('2');
+  await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1');
+  await page.screenshot({ path: 'release/verification/packaged-restored-workspace.png' });
+  for (const file of [firstPaper, secondPaper]) assert.deepEqual(await readFile(file), await readFile('public/examples/reading-demo.pdf'));
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, screenshot: 'release/verification/packaged-reader.png' }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, groupedMultiImport: true, independentViews: true, tabsSwitch: true, restartRestore: true, sourceBytesPreserved: true, profile, executable: install.executablePath, screenshots: ['release/verification/packaged-reader.png', 'release/verification/packaged-workspace.png', 'release/verification/packaged-restored-workspace.png'] }, null, 2));
 } finally {
   await app.close();
 }

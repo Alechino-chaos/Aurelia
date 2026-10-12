@@ -34,12 +34,12 @@
 
 **Interfaces:** Shared `LibraryState` has version, groups, entries, openIds, activeId, mode, sidebarWidth, collapsedGroupIds. `LibraryEntry` has id, path, name, groupId, documentId and optional view. `ReadingView` has page, anchorY, anchorX, zoom, panelOpen, panelTab. All interfaces are exported from library-types. `LibraryAction` is a discriminated union of group-create/rename/delete, entry-move/remove, tab-open/activate/close, mode, sidebar, view. Renderer bridge: `getLibrary(): Promise<LibraryState>`; `updateLibrary(action: LibraryAction): Promise<LibraryState>`; `importPapers(groupId?: string): Promise<LibraryImportResult>`; `importDroppedPapers(files: File[], groupId?: string): Promise<LibraryImportResult>`; `openLibraryPaper(id: string): Promise<OpenedFile>`; `relocateLibraryPaper(id: string): Promise<LibraryRelocateResult>`; `revealLibraryPaper(id: string): Promise<void>`. Import returns state, importedIds, errors. Relocate returns state plus mismatch/new-import outcome if applicable. `OpenedFile` gains libraryId and view. Main file read never activates a tab as an async side effect; tab activation remains an explicit ordered action.
 
-- [ ] Write tests for group normalization/80-character bound/uniqueness; deleting group reparents; case-insensitive normalized Windows path dedup; same-content different-path entries; adjacent tab close; bounded views; unknown actions/IDs rejected.
-- [ ] Run `npm test -- tests/library.test.ts`; observe expected missing module/export failure.
-- [ ] Implement pure model, serialized store with primary/temp/backup and protected recovery/future schema handling; recent migration once including missing entries; flush retry. Tests reopen a real temporary directory, corrupt primary/backup and verify original preservation.
-- [ ] Implement file service for validated <=250 MB PDFs, content hashing/change reset, multi-import partial success, matching relocation, mismatch normal-import offer, reveal by registered ID. Test temp fixture files and source-byte preservation.
-- [ ] Wire trusted IPC/preload/types; existing Open/Recent/Drop register entries without breaking old tests; include library flush in application close. Preserve session-save failures on remove.
-- [ ] Run focused tests, `npm run typecheck`, full `npm test`; review diff and commit task files.
+- [x] Write tests for group normalization/80-character bound/uniqueness; deleting group reparents; case-insensitive normalized Windows path dedup; same-content different-path entries; adjacent tab close; bounded views; unknown actions/IDs rejected.
+- [x] Run `npm test -- tests/library.test.ts`; observe expected missing module/export failure.
+- [x] Implement pure model, serialized store with primary/temp/backup and protected recovery/future schema handling; recent migration once including missing entries; flush retry. Tests reopen a real temporary directory, corrupt primary/backup and verify original preservation.
+- [x] Implement file service for validated <=250 MB PDFs, content hashing/change reset, multi-import partial success, matching relocation, mismatch normal-import offer, reveal by registered ID. Test temp fixture files and source-byte preservation.
+- [x] Wire trusted IPC/preload/types; existing Open/Recent/Drop register entries without breaking old tests; include library flush in application close. Preserve session-save failures on remove.
+- [x] Run focused tests, `npm run typecheck`, full `npm test`; review diff and commit task files.
 
 ## Task 2: Workspace navigation and independent active reader
 
@@ -47,12 +47,12 @@
 
 **Interfaces:** Consume Task 1 library bridge/types. `App` becomes workspace entry with browser/demo fallback; workspace owns tab metadata/resource cache and ordered activation. Reader accepts opened file/resources, initial view/search state, callbacks for view/search updates and open/import; keep its existing tested DOM labels and behavior. Expose a flush/capture mechanism used before switch/close and app shutdown so latest scroll state is acknowledged by main before close.
 
-- [ ] Write failing Electron tests for import/grouping, actual folder paths, sidebar/tabs mode, drawer and close-vs-remove; restart restores two tabs and active page/zoom while inactive missing files do not load.
-- [ ] Run new focused E2E cases on old build to establish RED.
-- [ ] Implement workspace + library panel, accessible inline group form (no window.prompt), move menu/drag, collapse/width preferences, reveal/relocate, selected/open indicators, keyboard cycle/close respecting IME, scrollable tabs and narrow-window layout.
-- [ ] Extract active reader only as needed; save outgoing normalized anchor/search options, cancel AI/save original session, clear selection. Lazy load/cache at most two PDF instances with generation guards; evict inactive >32 MiB. Same-content copies reload current shared sessions. Built-in sample is ephemeral. A canceled password/read affects only that tab.
-- [ ] Add race/state tests: rapid A/B/A load; same-content copies; changed source resets views; query/zoom/page/panel preserved independently; password/missing failure isolation; close/restart after scroll; existing note drafts and exports stay with original document.
-- [ ] Run `npm run typecheck`, focused E2E, full unit and Electron E2E suite. Fix regressions without loosening assertions. Self-review and commit task files.
+- [x] Write failing Electron tests for import/grouping, actual folder paths, sidebar/tabs mode, drawer and close-vs-remove; restart restores two tabs and active page/zoom while inactive missing files do not load.
+- [x] Run new focused E2E cases on old build to establish RED.
+- [x] Implement workspace + library panel, accessible inline group form (no window.prompt), move menu/drag, collapse/width preferences, reveal/relocate, selected/open indicators, keyboard cycle/close respecting IME, scrollable tabs and narrow-window layout.
+- [x] Extract active reader only as needed; save outgoing normalized anchor/search options, cancel AI/save original session, clear selection. Lazy load/cache at most two PDF instances with generation guards; evict inactive >32 MiB. Same-content copies reload current shared sessions. Built-in sample is ephemeral. A canceled password/read affects only that tab.
+- [x] Add race/state tests: rapid A/B/A load; same-content copies; changed source resets views; query/zoom/page/panel preserved independently; password/missing failure isolation; close/restart after scroll; existing note drafts and exports stay with original document.
+- [x] Run `npm run typecheck`, focused E2E, full unit and Electron E2E suite. Fix regressions without loosening assertions. Self-review and commit task files.
 
 ## Task 3: Version and complete desktop delivery
 
@@ -60,11 +60,11 @@
 
 **Interfaces:** Existing `npm run dist`, `scripts/install-local.ps1`, `.aurelia-install.local.json` and installed executable E2E setting; existing tests remain reusable against installed artifact.
 
-- [ ] Extend packaged smoke to cover library import, switch and persisted restore with isolated profile; run it before build against old installation to observe missing library failure if needed.
-- [ ] Bump package and lock to 0.7.0, English changelog/docs; update plan completion evidence.
-- [ ] Run typecheck/unit/Electron regression, `npm run dist`, install using recorded application root, preserving profiles and old installs.
-- [ ] Verify shortcut target, version, matching app.asar and portable; run installed E2E and smoke with isolated profiles, inspect screenshot for layout usability.
-- [ ] Run final fresh review; fix material findings and covering tests, rebuild/reinstall if product changes. Clean only validated obsolete generated outputs, keep current artifact and verification evidence. Report local outcome; do not push/release without new publishing instruction.
+- [x] Extend packaged smoke to cover library import, switch and persisted restore with isolated profile; run it before build against old installation to observe missing library failure if needed.
+- [x] Bump package and lock to 0.7.0, English changelog/docs; update plan completion evidence.
+- [x] Run typecheck/unit/Electron regression, `npm run dist`, install using recorded application root, preserving profiles and old installs.
+- [x] Verify shortcut target, version, matching app.asar and portable; run installed E2E and smoke with isolated profiles, inspect screenshot for layout usability.
+- [x] Run final fresh review; fix material findings and covering tests, rebuild/reinstall if product changes. Clean only validated obsolete generated outputs, keep current artifact and verification evidence. Report local outcome; do not push/release without new publishing instruction.
 
 ## Execution decisions
 

@@ -28,6 +28,8 @@ coverage/
 *.p12
 *.pfx
 ai-settings.json
+library.json
+library.json.*
 reading-sessions/
 Crashpad/
 *.dmp
