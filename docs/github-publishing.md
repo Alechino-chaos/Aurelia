@@ -45,6 +45,12 @@ npm run dist
 
 ## 发布程序
 
-`release/Aurelia-0.4.2-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。安装到本机并创建桌面快捷方式，可在打包完成后运行 `./scripts/install-local.ps1`。
+当前版本为 0.5.0。`release/Aurelia-0.5.0-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。每次版本更新在打包完成后运行 `./scripts/install-local.ps1`，同步更新本机程序和桌面快捷方式，并验证实际安装版本。
+
+## 已有仓库的日常更新
+
+先检查 `git status --short` 和 `git diff --check`，审阅本次源码、测试与文档改动，再自行提交和推送。不要把 `release/`、`tmp/`、`test-results/`、个人 PDF、API 配置或 `*.local.json` 加入 Git。
+
+版本变化见根目录 `CHANGELOG.md`，本机交付约定见 `AGENTS.md`。历史安全审查保留原版本号，不能视为新版本重新完成的安全审查。
 
 仓库尚未指定开源许可证。若计划允许他人修改、再分发，请由项目所有者选择许可证后添加 `LICENSE`。

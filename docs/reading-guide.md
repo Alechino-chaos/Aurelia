@@ -2,6 +2,19 @@
 
 [Back to the project](../README.md)
 
+## Find text in a paper
+
+Click the search icon beside the filename or press `Ctrl+F`. Type a word or phrase to search the entire current PDF, including pages you have not scrolled to. Search is local and does not contact AI.
+
+- Typing updates the match count and page highlights without moving your reading position. Press `Enter` for the next match or `Shift+Enter` for the previous one. The first jump starts from your current page; after searching finishes, navigation wraps at the ends.
+- The current match has an orange outline; other matches use pale blue. You can still select, copy, highlight, and annotate text while search is open.
+- Search ignores case by default. Enable **区分大小写** to match case. Enable **忽略行末连字符** to match `framework` when the PDF breaks it as `frame-` / `work`; visible hyphens are preserved by default.
+- Phrases can span lines within the same detected paragraph. Common font ligatures and soft hyphens are handled automatically. Search follows the selected text reading order; automatic columns keep separate detected paragraphs and columns apart. Search does not join phrases across pages or apply compatibility normalization to mathematical symbols.
+- During indexing, the bar shows the pages searched so far. A failed page is reported and can be retried; textless pages are reported separately. Scanned images require OCR, which is not available yet.
+- Press `Esc` or close the search bar to remove search highlights. Your position stays in place. The query is remembered while the same document remains open and cleared when you switch documents. Queries and indexes are not saved to disk.
+
+Search accepts up to 512 characters and displays up to 10,000 matches. If that limit is exceeded, the bar asks you to narrow the query. Complex layouts and unusual encodings can affect extracted text; confirm important results against the original page.
+
 ## Selection and copying
 
 The order in which a PDF draws text is not always its reading order. Aurelia uses text coordinates to organize common two-column layouts, reading the left column before the right. Full-width headings divide the page into separate regions. The visual layout of the original page stays intact.

@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 
 const install = JSON.parse((await readFile('.aurelia-install.local.json', 'utf8')).replace(/^\uFEFF/, ''));
+const expectedVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
 const profile = path.resolve(`tmp/packaged-smoke-${Date.now()}`);
 await mkdir(profile, { recursive: true });
 const environment = { ...process.env };
@@ -11,14 +12,18 @@ delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.PAPERDESK_DEV_URL;
 const app = await electron.launch({
   executablePath: install.executablePath,
-  args: [`--user-data-dir=${profile}`],
+  // Match the desktop E2E harness: coordinate-driven mouse drags need a fixed
+  // scale on Windows. Native high-DPI rendering is covered by zoom.spec.ts.
+  args: [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'],
   env: environment,
   timeout: 30_000,
 });
 try {
   const page = await app.firstWindow();
-  const runtime = await app.evaluate(({ app }) => ({ name: app.getName(), packaged: app.isPackaged, appPath: app.getAppPath(), userData: app.getPath('userData') }));
+  const runtime = await app.evaluate(({ app }) => ({ name: app.getName(), version: app.getVersion(), packaged: app.isPackaged, appPath: app.getAppPath(), userData: app.getPath('userData') }));
   assert.equal(runtime.name, 'Aurelia');
+  assert.equal(runtime.version, expectedVersion);
+  assert.equal(install.version, expectedVersion);
   assert.equal(runtime.packaged, true);
   assert.ok(runtime.appPath.endsWith('app.asar'));
   assert.equal(path.resolve(runtime.userData).toLowerCase(), profile.toLowerCase());
@@ -47,10 +52,19 @@ try {
   await page.keyboard.press('Control+c');
   const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
   assert.equal(copied, 'LEFT COLUMN: We propose a novel frame-work for representation learning. The method preserves the sentence across line breaks.');
+  await page.keyboard.press('Control+f');
+  const search = page.getByRole('textbox', { name: '搜索论文全文' });
+  await search.fill('representation learning');
+  // Progress also contains “0 处匹配”; wait for a completed, nonempty result
+  // before pressing Enter, just as the search E2E tests do.
+  await page.getByTestId('search-status').filter({ hasText: /^[1-9]\d* 处匹配$/ }).waitFor();
+  await search.press('Enter');
+  await page.locator('.search-highlight.active').first().waitFor();
+  assert.ok(await page.locator('.search-highlight.active').count() > 0);
   await mkdir('release/verification', { recursive: true });
   await page.screenshot({ path: 'release/verification/packaged-reader.png' });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', name: runtime.name, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, screenshot: 'release/verification/packaged-reader.png' }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, screenshot: 'release/verification/packaged-reader.png' }, null, 2));
 } finally {
   await app.close();
 }

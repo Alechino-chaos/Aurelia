@@ -13,6 +13,7 @@
 | `docs/` | Reading and development guides, visual assets, and review records |
 | `package.json`, `package-lock.json` | Project commands and pinned dependencies |
 | Root configuration files | TypeScript, Vite, Vitest, Playwright, and Git settings |
+| `CHANGELOG.md`, `AGENTS.md` | Release history and project update/delivery conventions |
 
 ## Local files excluded from Git
 

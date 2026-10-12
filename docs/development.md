@@ -63,6 +63,8 @@ The script copies the program into a new version directory, updates the desktop 
 
 Editing source code or running development mode does not update an installed copy. Rebuild and reinstall it to apply changes.
 
+For each version update in this project, update the package and lockfile versions and `CHANGELOG.md`, run the relevant checks, build with `npm run dist`, and run `./scripts/install-local.ps1`. Verify the desktop shortcut target and run `node scripts/smoke-packaged.mjs` against the installed copy before reporting the desktop update as complete. Keep test profiles isolated from personal data. See the project conventions in [AGENTS.md](../AGENTS.md).
+
 ## Environment troubleshooting
 
 If a Windows workspace carries a Low integrity label, Electron may exit during initialization. Set `PAPERDESK_ELECTRON_PATH` to a matching Electron runtime in an ordinary user directory, or provide `executablePath` and `version` in the Git-ignored `.paperdesk-runtime.local.json`. Ordinary workspaces do not require this override. Do not disable the application sandbox as a workaround.

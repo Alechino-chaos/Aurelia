@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import { PdfPage } from './components/PdfPage';
 import { loadPdf } from './pdf/engine';
@@ -10,6 +10,12 @@ import { AiPanel } from './components/AiPanel';
 import { AiSettingsDialog } from './components/AiSettingsDialog';
 import { AnnotationsPanel } from './components/AnnotationsPanel';
 import type { Annotation } from '../electron/session-types';
+import { usePdfSearch } from './search/usePdfSearch';
+import { SearchBar } from './components/SearchBar';
+import { releaseDocumentText } from './pdf/documentText';
+import type { SearchMatch } from './pdf/search';
+
+const noSearchMatches: SearchMatch[] = [];
 
 function readSetting<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(`paperdesk:${key}`) ?? 'null') ?? fallback; } catch { return fallback; }
@@ -50,6 +56,7 @@ export default function App() {
   const effectivePanelWidth = Math.min(panelWidth, maxPanelWidth);
   const [resizing, setResizing] = useState(false);
   const [autoColumns, setAutoColumns] = useState(true);
+  const search = usePdfSearch(pdf, autoColumns);
   const [repairHyphens, setRepairHyphens] = useState(false);
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const [showSelectionTools, setShowSelectionTools] = useState(false);
@@ -125,7 +132,7 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [toast]);
   useEffect(() => { void window.paperdesk?.getRecent().then(setRecent).catch(() => {}); }, []);
-  useEffect(() => () => { void pdf?.loadingTask.destroy(); }, [pdf]);
+  useEffect(() => () => { if (pdf) { releaseDocumentText(pdf); void pdf.loadingTask.destroy(); } }, [pdf]);
   useEffect(() => () => { generation.current++; void pending.current?.destroy(); }, []);
   useEffect(() => { setPageDraft(String(activePage)); }, [activePage]);
   useEffect(() => { saveSetting('panelWidth', panelWidth); }, [panelWidth]);
@@ -182,6 +189,12 @@ export default function App() {
       setPageDraft(String(target));
     }
   }, [pdf]);
+  useEffect(() => {
+    if (search.navigation) goToPage(search.navigation.match.page);
+  }, [search.navigation, goToPage]);
+  const closeSearch = useCallback(() => {
+    search.close(); reader.current?.focus({ preventScroll: true });
+  }, [search.close]);
   const locateAnnotation = (id: string) => {
     const entry = annotations.find(a => a.id === id);
     if (!entry || !reader.current) return;
@@ -280,6 +293,11 @@ export default function App() {
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229 || document.querySelector('.modal-backdrop')) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && pdf && !loading) {
+        event.preventDefault(); search.show(); return;
+      }
+      if (event.key === 'Escape' && search.open) { event.preventDefault(); closeSearch(); return; }
       const input = event.target instanceof HTMLElement && event.target.closest('input, textarea, [contenteditable="true"]');
       if (event.key === 'Escape') { setShowSelectionTools(false); window.getSelection()?.removeAllRanges(); }
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -303,7 +321,7 @@ export default function App() {
     window.addEventListener('keydown', keydown);
     document.addEventListener('copy', copy);
     return () => { window.removeEventListener('keydown', keydown); document.removeEventListener('copy', copy); };
-  }, [openFile, changeZoom, copyText, repairHyphens, notify]);
+  }, [openFile, changeZoom, copyText, repairHyphens, notify, pdf, loading, search.show, search.open, closeSearch]);
 
   useEffect(() => {
     let timeout = 0;
@@ -378,6 +396,7 @@ export default function App() {
         <button className="icon-button" title={navOpen ? '收起页码导航' : '展开页码导航'} aria-label="切换页码导航" onClick={() => setNavOpen(value => !value)}>{navOpen ? <PanelLeftClose /> : <PanelLeftOpen />}</button>
         <button className="open-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={16} /><span>打开 PDF</span></button>
         <span className="toolbar-divider" />
+        <button className={`icon-button${search.open ? ' active' : ''}`} title="全文搜索 (Ctrl+F)" aria-label="全文搜索" aria-expanded={search.open} disabled={!pdf || loading} onClick={search.show}><Search /></button>
         <div className="document-label" title={fileName || '尚未打开文档'}>{pdf && <FileText size={15} />}<span>{fileName || '阅读工作区'}</span></div>
       </div>
         <div className="reading-toolbar">
@@ -407,9 +426,12 @@ export default function App() {
         <div className="nav-footer"><BookOpen size={14} /> 连续阅读</div>
       </nav>}
       <div className="reading-workspace">
+        {search.open && <SearchBar search={search} page={activePage} onClose={closeSearch} />}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button small" aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div>}
         <div className={`reader ${!pdf ? 'reader-empty' : ''}`} ref={reader} onScroll={onScroll} tabIndex={0} aria-label="PDF 连续阅读区">
-          {pdf ? <div className="pages" key={pdf.loadingTask.docId} data-document-id={pdf.loadingTask.docId}>{sizes.map((size, index) => <PdfPage key={index} pdf={pdf} number={index + 1} size={size} scale={scale} dpr={pixelRatio} autoColumns={autoColumns} scrollRoot={reader} annotations={annotations} activeAnnotationId={activeAnnotationId} onAnnotationSelect={selectAnnotation} />)}<div className="document-end">— 已到文档末尾 —</div></div> : <div className="welcome">
+          {pdf ? <div className="pages" key={pdf.loadingTask.docId} data-document-id={pdf.loadingTask.docId}>{sizes.map((size, index) => <PdfPage key={index} pdf={pdf} number={index + 1} size={size} scale={scale} dpr={pixelRatio} autoColumns={autoColumns} scrollRoot={reader} annotations={annotations} activeAnnotationId={activeAnnotationId} onAnnotationSelect={selectAnnotation}
+            searchMatches={search.byPage.get(index + 1) ?? noSearchMatches} searchActiveId={search.activeId}
+            searchNavigation={search.navigation?.match.page === index + 1 ? search.navigation : null} />)}<div className="document-end">— 已到文档末尾 —</div></div> : <div className="welcome">
             <img className="welcome-logo" src={import.meta.env.BASE_URL + 'branding/aurelia.png'} alt="" />
             <h1>打开论文</h1>
             <p>打开或拖入 PDF，开始阅读、选取和翻译。</p>

@@ -1,23 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import type { TextContent } from 'pdfjs-dist/types/src/display/api';
-import { orderText } from '../pdf/readingOrder';
+import { getPageText } from '../pdf/documentText';
 import { guardTextSelection } from '../pdf/selectionGuard';
 import type { PageSize } from '../types';
 import { PdfCanvas } from './PdfCanvas';
 import { AnnotationLayer } from './AnnotationLayer';
 import type { Annotation } from '../../electron/session-types';
+import { SearchHighlights } from './SearchHighlights';
+import type { SearchMatch } from '../pdf/search';
+import type { SearchNavigation } from '../search/usePdfSearch';
 
 type Props = {
   pdf: PDFDocumentProxy; number: number; size: PageSize; scale: number; dpr: number;
   autoColumns: boolean; scrollRoot: React.RefObject<HTMLDivElement | null>;
   annotations: Annotation[]; activeAnnotationId: string | null; onAnnotationSelect: (id: string) => void;
+  searchMatches: SearchMatch[]; searchActiveId: string | null; searchNavigation: SearchNavigation | null;
 };
 
-export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot, annotations, activeAnnotationId, onAnnotationSelect }: Props) {
+export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot, annotations, activeAnnotationId, onAnnotationSelect, searchMatches, searchActiveId, searchNavigation }: Props) {
   const pageElement = useRef<HTMLDivElement>(null);
   const textHost = useRef<HTMLDivElement>(null);
-  const textContent = useRef<Promise<TextContent> | null>(null);
   const activeText = useRef<{ layer: TextLayer; container: HTMLDivElement; page: PDFPageProxy } | null>(null);
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
@@ -59,10 +61,8 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
     host.replaceChildren();
     void (async () => {
       const page = await pdf.getPage(number);
-      textContent.current ??= page.getTextContent({ disableNormalization: true });
-      const content = await textContent.current;
+      const ordered = await getPageText(pdf, number, autoColumns);
       if (disposed) return;
-      const ordered = orderText(content, page.view[2] - page.view[0], autoColumns && page.rotate === 0);
       // Keep the same spans and reading order during zoom. PDF.js can update
       // their metrics without extracting, sorting or rebuilding the text DOM.
       const viewport = page.getViewport({ scale: scaleRef.current });
@@ -83,7 +83,7 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
       setColumns(ordered.columns);
       setTextReady(true);
     })().catch(reason => {
-      if (!disposed && reason?.name !== 'AbortException') { textContent.current = null; setError('此页文本层加载失败'); }
+      if (!disposed && reason?.name !== 'AbortException') setError('此页文本层加载失败');
     });
     return () => { disposed = true; activeText.current = null; releaseSelectionGuard?.(); layer?.cancel(); container.remove(); };
   }, [pdf, number, visited, autoColumns, retry]);
@@ -94,6 +94,8 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
       style={{ width: size.width * scale, height: size.height * scale, '--scale-factor': scale, '--total-scale-factor': scale, '--user-unit': 1 } as CSSProperties}>
       <PdfCanvas pdf={pdf} number={number} size={size} scale={scale} dpr={dpr} near={near} retry={retry} scrollRoot={scrollRoot} pageElement={pageElement} onError={setError} />
       <AnnotationLayer annotations={annotations} page={number} size={size} activeId={activeAnnotationId} onSelect={onAnnotationSelect} />
+      <SearchHighlights matches={searchMatches} activeId={searchActiveId} navigation={searchNavigation}
+        pageElement={pageElement} textHost={textHost} scrollRoot={scrollRoot} ready={textReady} near={near} scale={scale} />
       <div ref={textHost} className="text-host" />
       {error && <div className="page-error">{error}<button onClick={() => { setError(''); setRetry(value => value + 1); }}>重试</button></div>}
       {empty && textReady && <div className="scan-notice">此页没有可选文本；扫描件的 OCR 将在后续版本支持。</div>}

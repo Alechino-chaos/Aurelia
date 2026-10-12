@@ -12,6 +12,9 @@ const errors: string[] = [];
 async function open(file: string) {
   await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, file);
   await page.getByRole('button', { name: '打开 PDF', exact: true }).click();
+  // The old document can still report raster-ready before the async file dialog
+  // has delivered the new file. Wait for the requested document before zooming.
+  await expect(page.locator('.document-label')).toHaveText(path.basename(file));
   await expect(page.locator('.loading-overlay')).toHaveCount(0);
   await expect(page.locator('.pdf-page').first()).toHaveAttribute('data-raster-ready', 'true');
 }

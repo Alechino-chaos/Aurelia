@@ -13,6 +13,8 @@ Aurelia 启动说明
 7. 右侧「复制选项」可切换文本顺序、原样复制、带出处复制与断词设置。
 8. 选中文字后点击「高亮」或「批注」，在右侧「批注」中添加笔记、修改颜色和定位原文。
 9. 批注会自动保存；删除后可以撤销。批注中「问 AI」的回答可追加保存到当前笔记。
+10. 按 Ctrl+F 搜索论文全文，Enter / Shift+Enter 跳到下一处 / 上一处，Esc 关闭搜索。
+11. 搜索支持区分大小写和忽略行末连字符；扫描图片中的文字暂不支持搜索。
 
 AI 支持 OpenAI 兼容接口，API Key 在本机加密保存。
 只有主动翻译或发送消息时才提交相关文字，原 PDF 不上传。
@@ -25,6 +27,6 @@ AI 支持 OpenAI 兼容接口，API Key 在本机加密保存。
 请勿删除桌面快捷方式指向的 Aurelia 安装目录；实际路径记录在 .aurelia-install.local.json。
 
 如需复制到另一台 Windows x64 电脑，可使用 release 文件夹里的
-Aurelia-0.4.2-portable.exe，无需安装 Node.js。
+Aurelia-0.5.0-portable.exe，无需安装 Node.js。
 
-开发者注意：修改源码不会自动更新这个独立程序，需要重新打包并更新快捷方式。
+开发者注意：每次版本更新必须依次完成测试、npm run dist、scripts/install-local.ps1，并验证桌面快捷方式启动的是新版本。

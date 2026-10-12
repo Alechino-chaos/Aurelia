@@ -124,6 +124,9 @@ AI requests are processed by the provider you configure. See [Data and backups](
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+O` | Open a PDF |
+| `Ctrl+F` | Search the current PDF |
+| `Enter` / `Shift+Enter` in search | Next / previous match |
+| `Esc` in search | Close search and clear search highlights |
 | `Ctrl+C` | Copy the cleaned selection |
 | `Ctrl+Shift+C` | Copy the original selection text |
 | `Ctrl++` / `Ctrl+-` | Zoom in / out |
