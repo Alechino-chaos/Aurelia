@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — 2026-10-13
+
+- Follow native PDF links and named page actions, including offset destinations on cropped or intrinsically rotated pages, while preserving the current numeric zoom or fit-to-width mode.
+- Read the PDF's native nested outline in the existing navigation panel, expand or collapse sections, and switch to the physical page list when needed.
+- Return through explicit reading jumps with Back/Forward and Alt+Left/Alt+Right; restore the saved position and zoom for links, outline items, page controls, search matches, annotation locations and AI source references.
+- Keep up to 100 entries in each history direction per open library entry, independently for same-content copies and across paper switches or resource eviction. History clears on closure, restart or content change and is never written to disk.
+- Keep linked text selectable and copyable, support keyboard link activation, and open only explicitly clicked HTTP(S) destinations in the system browser after main-process validation.
+
+Navigation uses metadata embedded in the PDF. Aurelia does not infer reference links, generate outlines, run PDF scripts or open local or remote files through PDF actions. Manual page rotation, previews and split views are not included.
+
 ## 0.7.0 — 2026-10-13
 
 - Organize explicitly imported PDFs in persistent, manually named groups, with actual folder locations visible beside each paper.

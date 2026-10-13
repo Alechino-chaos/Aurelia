@@ -34,10 +34,10 @@
 
 **Interfaces:** Export NavigationPoint {page:number; x:number; y:number; zoom:number|'fit'} where x/y are normalized displayed-page coordinates (capture may include small signed offsets near page margins); NavigationHistory {past:NavigationPoint[];future:NavigationPoint[]}; emptyHistory(), recordJump(history,from,to), stepHistory(history,direction:'back'|'forward',current):{history,target:NavigationPoint|null}. History is immutable, capped100, deduplicates same-location jumps with subpixel tolerance. Export resolveDestination(pdf,destination):Promise<{page:number;x:number|null;y:number|null}> using normalized displayed-page coordinates, no zoom. Export native link types/classification and rect transform helper suitable for React hit areas. Export validateExternalUrl(value:unknown):string from electron/external-url.ts, with8192bound/HTTP(S)/no credentials/control chars. Later tasks consume these exact exports; any justified interface refinement must be documented in report before Task2 dispatch.
 
-- [ ] Add pure behavioral history tests (branching, exact coordinates/zoom, current scrolled capture, cap, noop, independence) and destination/URL tests; run npm test -- tests/navigation.test.ts and observe missing-module RED.
-- [ ] Build a reproducible small synthetic PDF with direct/named destinations, nested outline, offset target specifying a zoom, links on rotated/cropped page, invalid destination and external HTTP(S) link; fixture generation is idempotent and uses existing pdf-lib. Ordinary text includes link-bearing phrases for UI drag/copy tests.
-- [ ] Implement history and URL validation, native classification/rect geometry and destination resolution, rejecting invalid/out-of-range data. Use actual fixture through installed PDF.js for named/direct/rotated/cropped tests; targeted test doubles only for deferred/failure conditions.
-- [ ] Run focused tests, typecheck and full unit suite; self-review, commit task files and report exact APIs plus RED/GREEN evidence.
+- [x] Add pure behavioral history tests (branching, exact coordinates/zoom, current scrolled capture, cap, noop, independence) and destination/URL tests; run npm test -- tests/navigation.test.ts and observe missing-module RED.
+- [x] Build a reproducible small synthetic PDF with direct/named destinations, nested outline, offset target specifying a zoom, links on rotated/cropped page, invalid destination and external HTTP(S) link; fixture generation is idempotent and uses existing pdf-lib. Ordinary text includes link-bearing phrases for UI drag/copy tests.
+- [x] Implement history and URL validation, native classification/rect geometry and destination resolution, rejecting invalid/out-of-range data. Use actual fixture through installed PDF.js for named/direct/rotated/cropped tests; targeted test doubles only for deferred/failure conditions.
+- [x] Run focused tests, typecheck and full unit suite; self-review, commit task files and report exact APIs plus RED/GREEN evidence.
 
 ## Task 2: Reader navigation, outline and per-paper integration
 
@@ -45,12 +45,12 @@
 
 **Interfaces:** Consume Task1 exports. ReaderSnapshot gains navigation:NavigationHistory and Reader receives initialNavigation?:NavigationHistory. Workspace owns entry-keyed transient navigation memory distinct from ReadingView; snapshot history synchronously before suspend/remount, retain through eviction, clear on closed/removed/changed identity. Bridge openExternalUrl(url:string):Promise<void> is trusted-frame guarded and invokes shell.openExternal only after validateExternalUrl. No library schema mutation.
 
-- [ ] Write real Electron tests using native navigation.pdf: link to offset destination at125%, back/forward to exact original position/zoom, nested outline/no-outline and link text drag. Run on old UI to establish meaningful RED.
-- [ ] Implement navigation controller with explicit transaction/generation guards and synchronous source capture. Support native destination/actions, page controls, search and annotation/source jumps. Commit history only for successful navigation; stale/failure leaves history/viewport intact. Prevent delayed search-highlight auto-scroll after newer history action. Ignore Alt shortcuts during editing/composition/modal interactions and distinguish from page controls.
-- [ ] Add lazy native link regions transformed with actual PDF viewport; preserve pointer drag text selection, keyboard focus/click, copy/highlight; provide labels and hover destination. Add trusted HTTP(S) IPC; unsupported actions report nonblocking message, never launch scripts/files.
-- [ ] Add outline/pages tabs in existing left slot with nested expand/collapse, loading/empty/retry; keep library drawer reachable and existing page-navigation toggle functional in sidebar/tabs modes. Add toolbar Back/Forward and Alt shortcuts; inspect960/1440layouts.
-- [ ] Carry navigation history through managed Reader/Workspace snapshots and browser fallback, resetting by lifecycle/content identity. Cover same-content independent histories, cache eviction, close/reopen/restart, native zoom-ignore/fit, crop/rotation, stale slow destinations, text-selection and search/note return behavior with tests. Preserve original regression assertions.
-- [ ] Run typecheck, focused E2E, full units, npm run build and full Electron suite. Self-review and commit; report APIs, tests and screenshots.
+- [x] Write real Electron tests using native navigation.pdf: link to offset destination at125%, back/forward to exact original position/zoom, nested outline/no-outline and link text drag. Run on old UI to establish meaningful RED.
+- [x] Implement navigation controller with explicit transaction/generation guards and synchronous source capture. Support native destination/actions, page controls, search and annotation/source jumps. Commit history only for successful navigation; stale/failure leaves history/viewport intact. Prevent delayed search-highlight auto-scroll after newer history action. Ignore Alt shortcuts during editing/composition/modal interactions and distinguish from page controls.
+- [x] Add lazy native link regions transformed with actual PDF viewport; preserve pointer drag text selection, keyboard focus/click, copy/highlight; provide labels and hover destination. Add trusted HTTP(S) IPC; unsupported actions report nonblocking message, never launch scripts/files.
+- [x] Add outline/pages tabs in existing left slot with nested expand/collapse, loading/empty/retry; keep library drawer reachable and existing page-navigation toggle functional in sidebar/tabs modes. Add toolbar Back/Forward and Alt shortcuts; inspect960/1440layouts.
+- [x] Carry navigation history through managed Reader/Workspace snapshots and browser fallback, resetting by lifecycle/content identity. Cover same-content independent histories, cache eviction, close/reopen/restart, native zoom-ignore/fit, crop/rotation, stale slow destinations, text-selection and search/note return behavior with tests. Preserve original regression assertions.
+- [x] Run typecheck, focused E2E, full units, npm run build and full Electron suite. Self-review and commit; report APIs, tests and screenshots.
 
 ## Task 3: Version, documentation and complete installed delivery
 
@@ -58,11 +58,11 @@
 
 **Interfaces:** Existing npm run dist, scripts/install-local.ps1 and .aurelia-install.local.json. Installed E2E uses AURELIA_TEST_EXECUTABLE; smoke imports Task1's synthetic fixture by native picker with isolated profile.
 
-- [ ] Extend packaged smoke to prove actual native link/outline click, preserved zoom and Back/Forward; retain copy/search/export/library/restoration assertions. Establish missing-feature RED against old installed0.7 before packaging when feasible.
-- [ ] Bump version to0.8.0 and write English changelog/readme/reading guide. Correct stale guide statements about per-paper search memory and workspace storage while documenting new navigation boundaries.
-- [ ] Build portable after source/review green. Install to existing recorded root and update desktop shortcut, preserving old installs/personal data; verify actual runtime/version/exe/asar match.
-- [ ] Run full installed Electron suite and enhanced packaged smoke in disposable profiles; inspect narrow/wide screenshots and save verification evidence. No rebuild for docs-only finalization.
-- [ ] Finish review, clean validated obsolete generated outputs only, commit scoped files/completed plan, report local delivery without remote publication.
+- [x] Extend packaged smoke to prove actual native link/outline click, preserved zoom and Back/Forward; retain copy/search/export/library/restoration assertions. Establish missing-feature RED against old installed0.7 before packaging when feasible.
+- [x] Bump version to0.8.0 and write English changelog/readme/reading guide. Correct stale guide statements about per-paper search memory and workspace storage while documenting new navigation boundaries.
+- [x] Build portable after source/review green. Install to existing recorded root and update desktop shortcut, preserving old installs/personal data; verify actual runtime/version/exe/asar match.
+- [x] Run full installed Electron suite and enhanced packaged smoke in disposable profiles; inspect narrow/wide screenshots and save verification evidence. No rebuild for docs-only finalization.
+- [x] Finish review, clean validated obsolete generated outputs only, commit scoped files/completed plan, report local delivery without remote publication.
 
 ## Execution decisions
 

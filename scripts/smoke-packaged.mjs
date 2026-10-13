@@ -5,14 +5,17 @@ import assert from 'node:assert/strict';
 
 const install = JSON.parse((await readFile('.aurelia-install.local.json', 'utf8')).replace(/^\uFEFF/, ''));
 const expectedVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+const evidence = name => `release/verification/${name}-${expectedVersion}`;
 const profile = path.resolve(`tmp/packaged-smoke-${Date.now()}`);
 await mkdir(profile, { recursive: true });
 const firstPaper = path.join(profile, 'papers', 'first', 'reading-demo.pdf');
 const secondPaper = path.join(profile, 'papers', 'second', 'reading-demo.pdf');
+const navigationPaper = path.join(profile, 'papers', 'navigation.pdf');
 for (const file of [firstPaper, secondPaper]) {
   await mkdir(path.dirname(file), { recursive: true });
   await copyFile(path.resolve('public/examples/reading-demo.pdf'), file);
 }
+await copyFile(path.resolve('tests/fixtures/navigation.pdf'), navigationPaper);
 const environment = { ...process.env };
 delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.PAPERDESK_DEV_URL;
@@ -93,8 +96,8 @@ try {
   assert.ok(exported.includes('第 1 页'));
   assert.ok(exported.includes('representation learning'));
   await mkdir('release/verification', { recursive: true });
-  await copyFile(notesFile, 'release/verification/notes-export-example.md');
-  await page.screenshot({ path: 'release/verification/packaged-reader.png' });
+  await copyFile(notesFile, evidence('notes-export-example') + '.md');
+  await page.screenshot({ path: evidence('packaged-reader') + '.png' });
   const entries = await page.evaluate(() => window.paperdesk.getLibrary());
   assert.equal(entries.entries.length, 2);
   assert.equal(entries.groups[0].name, 'Packaged reading');
@@ -121,7 +124,7 @@ try {
   await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', firstId);
   await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('3');
   await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1.25');
-  await page.screenshot({ path: 'release/verification/packaged-workspace.png' });
+  await page.screenshot({ path: evidence('packaged-workspace') + '.png' });
   // Native close flushes the latest workspace and session. Relaunch the exact
   // installed binary against the same disposable profile to prove persistence.
   await app.close(); app = await launch(); page = await app.firstWindow();
@@ -139,10 +142,78 @@ try {
   await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', secondId);
   await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('2');
   await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1');
-  await page.screenshot({ path: 'release/verification/packaged-restored-workspace.png' });
+  await page.screenshot({ path: evidence('packaged-restored-workspace') + '.png' });
   for (const file of [firstPaper, secondPaper]) assert.deepEqual(await readFile(file), await readFile('public/examples/reading-demo.pdf'));
+
+  // Exercise native PDF metadata through the installed reader after retaining
+  // the original copy/search/export/library/restart checks above.
+  await page.getByRole('button', { name: '论文库', exact: true }).click();
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, navigationPaper);
+  await page.getByRole('button', { name: '导入论文', exact: true }).click();
+  await expect(page.locator('.document-label')).toHaveText('navigation.pdf');
+  await page.locator('[data-page-number="1"][data-text-ready="true"] canvas').waitFor();
+  await expect(page.locator('[data-page-number="1"] .native-pdf-link')).toHaveCount(9);
+  await page.getByRole('button', { name: '切换右侧面板', exact: true }).click();
+  const zoom = page.getByRole('combobox', { name: '缩放比例' });
+  const currentPage = page.getByRole('textbox', { name: '页码', exact: true });
+  const position = () => page.locator('.reader').evaluate(root => ({ top: root.scrollTop, left: root.scrollLeft }));
+  const expectPosition = async point => {
+    await expect.poll(async () => {
+      const actual = await position();
+      return Math.max(Math.abs(actual.top - point.top), Math.abs(actual.left - point.left));
+    }).toBeLessThan(1);
+  };
+  await zoom.selectOption('1.25');
+  await page.locator('.reader').evaluate(root => { root.scrollTop = 40; root.scrollLeft = 0; });
+  const source = await position();
+  const link = await page.locator('[data-page-number="1"] .native-pdf-link').first().boundingBox();
+  assert.ok(link);
+  await page.mouse.click(link.x + link.width / 2, link.y + link.height / 2);
+  await expect(currentPage).toHaveValue('2');
+  await expect(zoom).toHaveValue('1.25');
+  // Horizontal centering can clamp to the reader edge at this zoom; the native
+  // vertical offset must still be exact and Back restores both actual axes.
+  await expect.poll(() => page.locator('[data-page-number="2"]').evaluate(element => {
+    const paper = element.getBoundingClientRect(), reader = element.closest('.reader').getBoundingClientRect();
+    return Math.abs(paper.top + paper.height * .25 - reader.top);
+  })).toBeLessThan(1);
+  await zoom.selectOption('1');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const destination = await position();
+  await page.getByRole('button', { name: '后退', exact: true }).click();
+  await expect(zoom).toHaveValue('1.25');
+  await expectPosition(source);
+  await page.getByRole('button', { name: '前进', exact: true }).click();
+  await expect(zoom).toHaveValue('1');
+  await expectPosition(destination);
+  await page.getByRole('button', { name: '切换页码导航', exact: true }).click();
+  await page.getByRole('button', { name: '目录', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Rotated detail', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '折叠 Introduction', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Rotated detail', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '展开 Introduction', exact: true }).click();
+  await zoom.selectOption('fit');
+  await page.getByRole('button', { name: 'Rotated detail', exact: true }).click();
+  await expect(currentPage).toHaveValue('3');
+  await expect(zoom).toHaveValue('fit');
+  await expect.poll(() => page.locator('[data-page-number="3"]').evaluate(element => {
+    const root = element.closest('.reader'), paper = element.getBoundingClientRect(), reader = root.getBoundingClientRect();
+    const target = root.scrollTop + paper.top + paper.height * .25 - reader.top;
+    // Last-page destinations clamp when fit width leaves too little document
+    // below the requested anchor to place it at the viewport's top.
+    return Math.abs(root.scrollTop - Math.max(0, Math.min(target, root.scrollHeight - root.clientHeight)));
+  })).toBeLessThan(1);
+  await page.screenshot({ path: evidence('packaged-outline-1440') + '.png' });
+  await page.setViewportSize({ width: 960, height: 720 });
+  await expect(page.getByRole('button', { name: '后退', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '前进', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '论文库', exact: true })).toBeVisible();
+  await page.screenshot({ path: evidence('packaged-navigation-960') + '.png' });
+  assert.deepEqual(await readFile(navigationPaper), await readFile('tests/fixtures/navigation.pdf'));
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, groupedMultiImport: true, independentViews: true, tabsSwitch: true, restartRestore: true, sourceBytesPreserved: true, profile, executable: install.executablePath, screenshots: ['release/verification/packaged-reader.png', 'release/verification/packaged-workspace.png', 'release/verification/packaged-restored-workspace.png'] }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, appPath: runtime.appPath, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, groupedMultiImport: true, independentViews: true, tabsSwitch: true, restartRestore: true, nativeLinkClick: true, nestedOutlineClick: true, numericZoomPreserved: true, fitPreserved: true, backForwardPositionAndZoom: true, narrowControls: true, sourceBytesPreserved: true, profile, executable: install.executablePath, screenshots: ['packaged-reader', 'packaged-workspace', 'packaged-restored-workspace', 'packaged-outline-1440', 'packaged-navigation-960'].map(name => evidence(name) + '.png') }, null, 2));
 } finally {
   await app.close();
 }

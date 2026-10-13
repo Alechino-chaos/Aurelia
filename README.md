@@ -89,6 +89,8 @@ Use **导入论文** to add several PDFs to a manually named group. The library 
 
 Closing a tab keeps the paper in the library. Removing an entry or deleting a group leaves the original PDF and saved notes intact. Use **在文件夹中显示** to find a source file, or **重新定位** if it has moved. Matching content retains the existing reading state; different content can be imported as another paper.
 
+In **0.8.0**, follow links embedded in a PDF and choose **目录** in the page-navigation panel to read its nested outline. Explicit jumps keep your current zoom. Use **后退** / **前进** or `Alt+Left` / `Alt+Right` to return to saved positions and zoom levels. Each open paper keeps its own temporary navigation history; see [Navigating a paper](docs/reading-guide.md#navigate-a-paper) for its lifetime and supported destinations.
+
 Reading, copying, highlighting, and annotation work without an AI connection.
 
 Use **导出笔记** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).
@@ -134,6 +136,7 @@ AI requests are processed by the provider you configure. See [Data and backups](
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous open paper |
 | `Ctrl+W` | Close the active paper, keeping its library entry |
 | `Ctrl+F` | Search the current PDF |
+| `Alt+Left` / `Alt+Right` | Back / forward through explicit reading jumps |
 | `Enter` / `Shift+Enter` in search | Next / previous match |
 | `Esc` in search | Close search and clear search highlights |
 | `Ctrl+C` | Copy the cleaned selection |

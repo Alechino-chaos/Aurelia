@@ -2,6 +2,19 @@
 
 [Back to the project](../README.md)
 
+## Navigate a paper
+
+Click a reference, figure link or other native PDF link to follow its embedded destination. Aurelia uses the PDF's actual link metadata; plain reference text without a link stays ordinary text. Linked text remains selectable and copyable. Dragging a selection does not activate the link; a focused link can also be activated from the keyboard.
+
+Open the left navigation panel with **切换页码导航**, then choose **目录** for the PDF's native outline or **页码** for its physical page list. Expand or collapse nested outline sections and click an item to jump. A PDF without an outline shows an empty state, and failed metadata can be retried. The library remains accessible from **论文库**.
+
+- Internal links and outline items support named and direct PDF destinations, including cropped and intrinsically rotated pages. Their embedded zoom is ignored: jumps preserve your current numeric zoom or fit-to-width mode. Manual page rotation is not provided.
+- **后退** and **前进**, or `Alt+Left` and `Alt+Right`, restore the position and zoom saved by explicit jumps. Page controls, page-list and outline items, native links, search matches, annotation locations and AI source references use the same history. Passive scrolling and zoom changes do not add entries. Alt shortcuts are inactive while editing text, composing with an IME or using a modal dialog.
+- Each open library entry has independent in-memory history, including copies with identical PDF contents. History survives switching papers and release of inactive PDF resources, holds up to 100 entries per direction, and clears when the paper closes, the app restarts or the content changes. Saved reading positions still restore after restart; Back/Forward history is not saved to disk.
+- Explicitly clicked HTTP(S) links open in the system browser after validation. Unsupported actions and invalid destinations show a message without moving the reader or changing its history. Aurelia never executes PDF scripts or opens local or remote files through PDF actions. If PDF.js exposes a safe HTTP(S) URL from an action, it is treated only as an explicit browser link.
+
+Aurelia does not infer reference links, perform OCR, generate AI outlines, or provide link previews or split views.
+
 ## Find text in a paper
 
 Click the search icon beside the filename or press `Ctrl+F`. Type a word or phrase to search the entire current PDF, including pages you have not scrolled to. Search is local and does not contact AI.
@@ -11,7 +24,7 @@ Click the search icon beside the filename or press `Ctrl+F`. Type a word or phra
 - Search ignores case by default. Enable **区分大小写** to match case. Enable **忽略行末连字符** to match `framework` when the PDF breaks it as `frame-` / `work`; visible hyphens are preserved by default.
 - Phrases can span lines within the same detected paragraph. Common font ligatures and soft hyphens are handled automatically. Search follows the selected text reading order; automatic columns keep separate detected paragraphs and columns apart. Search does not join phrases across pages or apply compatibility normalization to mathematical symbols.
 - During indexing, the bar shows the pages searched so far. A failed page is reported and can be retried; textless pages are reported separately. Scanned images require OCR, which is not available yet.
-- Press `Esc` or close the search bar to remove search highlights. Your position stays in place. The query is remembered while the same document remains open and cleared when you switch documents. Queries and indexes are not saved to disk.
+- Press `Esc` or close the search bar to remove search highlights. Your position stays in place. Each open paper remembers its query, options and active match while switching papers, including when an inactive PDF resource is released. Search memory clears on paper closure, app restart or changed content. Queries and indexes are not saved to disk.
 
 Search accepts up to 512 characters and displays up to 10,000 matches. If that limit is exceeded, the bar asks you to narrow the query. Complex layouts and unusual encodings can affect extracted text; confirm important results against the original page.
 
@@ -88,7 +101,9 @@ The default Windows user-data directory is `%APPDATA%\paperdesk\`. The earlier p
 | API settings | `ai-settings.json`; the key is encrypted by the operating system |
 | Reading sessions | `reading-sessions/`; JSON containing conversations, translations, annotations, and quotations |
 | Recent files | `recent.json` |
-| Reading position and panel width | Application local storage |
+| Library groups, entries, open papers and reading views | `library.json`; includes per-entry position, zoom and panel state, workspace mode and sidebar layout |
+| Reader preferences and fallback view settings | Application local storage |
+| Search state and Back/Forward history | Memory only; not included in backups |
 
 Close the app normally before copying the user-data directory for a backup. Session records are not encrypted: keep backups private and do not publish them in a repository. Key encryption depends on the system account environment. Re-enter your key after moving to another machine instead of treating the settings file as a portable key backup.
 
@@ -100,4 +115,4 @@ Remote AI requests use HTTPS and do not follow redirects automatically. Changing
 
 While zooming, Aurelia temporarily scales the existing image. Once the gesture ends, it renders at the new scale and replaces the preview with a sharp result. At high zoom levels, visible regions use high-resolution tiles to control memory use. Brief softness during zoom is expected; scanned images remain limited by their source resolution.
 
-Manual page rotation, a PDF link annotation layer, and a bookmark outline are not yet available. Full-document retrieval and cloud sync are also not implemented.
+Manual page rotation, full-document AI retrieval and cloud sync are not implemented. Native PDF links and outlines are available as described under [Navigate a paper](#navigate-a-paper).
