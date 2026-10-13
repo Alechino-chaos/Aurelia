@@ -93,7 +93,13 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
   const frame = useRef(0);
   const restorePage = useRef<number | null>(null);
   const initialAnchor = useRef(initialView ?? null);
+  const initialRestoreFrames = useRef<{ outer: number; inner: number } | null>(null);
   const readyView = useRef(!initialView);
+  const cancelInitialRestore = useCallback((frames = initialRestoreFrames.current) => {
+    if (!frames) return;
+    cancelAnimationFrame(frames.outer); cancelAnimationFrame(frames.inner);
+    if (initialRestoreFrames.current === frames) initialRestoreFrames.current = null;
+  }, []);
   const scale = zoom === 'fit' ? Math.max(.25, Math.min(2.5, (readerWidth - 72) / Math.max(612, ...sizes.map(size => size.width)))) : zoom;
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
@@ -205,6 +211,7 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
       if (!current() || reader.current !== root) return false;
       const element = root.querySelector<HTMLElement>(`[data-page-number="${target.page}"]`);
       if (!element) return false;
+      cancelInitialRestore();
       initialAnchor.current = null; readyView.current = true; anchor.current = null;
       if (restoreZoom && zoomRef.current !== target.zoom) {
         // Commit zoom and its measured anchor together, with no asynchronous gap.
@@ -242,15 +249,22 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
     const page = Math.max(1, Math.min(pdf.numPages, saved.page));
     const element = root.querySelector<HTMLElement>(`[data-page-number="${page}"]`);
     if (!element) return;
-    const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!reader.current) return;
-      const rect = element.getBoundingClientRect();
-      root.scrollTop += rect.top - root.getBoundingClientRect().top + saved.anchorY * rect.height;
-      root.scrollLeft = saved.anchorX * rect.width;
-      setActivePage(page); initialAnchor.current = null; readyView.current = true;
-    }));
-    return () => cancelAnimationFrame(frame);
-  }, [pdf, scale]);
+    const frames = { outer: 0, inner: 0 }; initialRestoreFrames.current = frames;
+    const ownsRestoration = () => initialRestoreFrames.current === frames && initialAnchor.current === saved
+      && reader.current === root && root.contains(element);
+    frames.outer = requestAnimationFrame(() => {
+      if (!ownsRestoration()) return;
+      frames.inner = requestAnimationFrame(() => {
+        if (!ownsRestoration()) return;
+        const rect = element.getBoundingClientRect();
+        root.scrollTop += rect.top - root.getBoundingClientRect().top + saved.anchorY * rect.height;
+        root.scrollLeft = saved.anchorX * rect.width;
+        initialRestoreFrames.current = null;
+        setActivePage(page); initialAnchor.current = null; readyView.current = true;
+      });
+    });
+    return () => cancelInitialRestore(frames);
+  }, [pdf, scale, cancelInitialRestore]);
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => { captureAnchor(); setReaderWidth(entry.contentRect.width); });
     observer.observe(reader.current!);

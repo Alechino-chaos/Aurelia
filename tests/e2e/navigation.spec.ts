@@ -243,6 +243,47 @@ test.describe.serial('native document navigation', () => {
     expect(await app.evaluate(() => (globalThis as any).openedUrls)).toEqual(['https://doi.org/10.1234/navigation']);
   });
 
+  test('a newer explicit landing cancels delayed initial restoration and Back retains the saved source', async () => {
+    await open(third); await page.getByRole('combobox', { name: '缩放比例' }).selectOption('1.25'); await turn(1);
+    await page.evaluate(async paper => {
+      const library = await window.paperdesk!.getLibrary(), entry = library.entries.find(entry => entry.path === paper)!;
+      await window.paperdesk!.updateLibrary({ type: 'view', id: entry.id, documentId: entry.documentId!,
+        view: { page: 2, anchorX: 0, anchorY: .2, zoom: 1.25, panelOpen: false, panelTab: 'selection' } });
+      const request = window.requestAnimationFrame, cancel = window.cancelAnimationFrame;
+      const held = new Map<number, FrameRequestCallback>(); let dispatching = false;
+      window.requestAnimationFrame = callback => {
+        if (dispatching) {
+          const id = request(() => { held.set(id, callback); }); return id;
+        }
+        return request(time => { dispatching = true; try { callback(time); } finally { dispatching = false; } });
+      };
+      window.cancelAnimationFrame = id => { held.delete(id); cancel(id); };
+      (window as any).heldInitialFrames = held;
+      (window as any).releaseInitialFrames = () => {
+        window.requestAnimationFrame = request; window.cancelAnimationFrame = cancel;
+        for (const callback of held.values()) request(callback); held.clear();
+      };
+    }, paper);
+    await open(paper);
+    await expect.poll(() => page.evaluate(() => (window as any).heldInitialFrames.size)).toBeGreaterThan(0);
+    await turn(3);
+    const landed = await position();
+    await page.evaluate(() => (window as any).releaseInitialFrames()); await page.waitForTimeout(150);
+    await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('3');
+    expect(await position()).toEqual(landed);
+    await page.getByRole('button', { name: '后退', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('2');
+    await expect.poll(() => page.locator('[data-page-number="2"]').evaluate(el => {
+      const bounds = el.getBoundingClientRect(), root = el.closest('.reader')!.getBoundingClientRect();
+      return Math.abs(bounds.top + bounds.height * .2 - root.top);
+    })).toBeLessThan(1);
+    await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1.25');
+    // This newly exercised entry must still begin empty in the lifecycle test below.
+    await page.getByRole('button', { name: '标签模式' }).click();
+    await page.getByRole('button', { name: `关闭论文 ${third}`, exact: true }).click();
+    await top();
+  });
+
   test('retains independent same-content histories across switching and cache eviction, resets close/restart/content change', async () => {
     await top(); await turn(2); await open(copy);
     await expect(page.getByRole('button', { name: '后退', exact: true })).toBeDisabled();
