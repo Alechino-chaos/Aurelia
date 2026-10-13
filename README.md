@@ -54,7 +54,7 @@ Read locally, choose your own model, and keep a separate reading history for eac
 
 ![Aurelia displaying a two-column PDF alongside a cleaned selection preview](docs/images/aurelia-reader.png)
 
-<p align="center"><sub>Actual Windows application · Built-in synthetic sample · The current app interface is in Chinese</sub></p>
+<p align="center"><sub>Actual Windows application · Built-in synthetic sample · Chinese interface shown; English is also available</sub></p>
 
 <a name="getting-started"></a>
 
@@ -73,7 +73,9 @@ npm ci
 npm run dev
 ```
 
-Drag in a local PDF, or try the built-in two-column sample from the welcome screen.
+On first launch, choose **English** or **简体中文** and confirm before entering the workspace. Upgrading an existing profile to **0.9.0** also asks once when no confirmed language is saved. The system language only preselects an option; your confirmation is required. Then drag in a local PDF or try the built-in two-column sample.
+
+Change the interface at any time in **Settings → General → Interface language**. Saving takes effect immediately and preserves your open paper, reading position, zoom, navigation, search, notes, AI response and unsaved AI settings. The choice belongs to your local profile and is retained across restarts and version updates. You do not need an AI connection to save it.
 
 ### <img src="docs/images/icons/inline/download.svg" width="18" height="18" alt="" /> Use a portable build
 
@@ -85,32 +87,34 @@ If you already have `Aurelia-<version>-portable.exe`, double-click it to launch.
 2. **Select a passage.** Use the selection toolbar to copy, translate, ask a question, highlight, or annotate.
 3. **Keep your thoughts.** Continue the conversation or write a note in the side panel. Your records are saved locally with that paper.
 
-Use **导入论文** to add several PDFs to a manually named group. The library shows each paper's actual folder; groups organize entries without moving files. Choose **文件树模式** for the sidebar or **标签模式** for reading tabs, with **论文库** opening the grouped drawer when needed. Your open papers and each paper's reading position, zoom and panel state return after restart.
+Use **Import papers** to add several PDFs to a manually named group. The library shows each paper's actual folder; groups organize entries without moving files. Choose **Tree view** for the sidebar or **Tab view** for reading tabs, with **Library** opening the grouped drawer when needed. Your open papers and each paper's reading position, zoom and panel state return after restart.
 
-Closing a tab keeps the paper in the library. Removing an entry or deleting a group leaves the original PDF and saved notes intact. Use **在文件夹中显示** to find a source file, or **重新定位** if it has moved. Matching content retains the existing reading state; different content can be imported as another paper.
+Closing a tab keeps the paper in the library. Removing an entry or deleting a group leaves the original PDF and saved notes intact. Use **Show in folder** to find a source file, or **Locate file** if it has moved. Matching content retains the existing reading state; different content can be imported as another paper.
 
-In **0.8.0**, follow links embedded in a PDF and choose **目录** in the page-navigation panel to read its nested outline. Explicit jumps keep your current zoom. Use **后退** / **前进** or `Alt+Left` / `Alt+Right` to return to saved positions and zoom levels. Each open paper keeps its own temporary navigation history; see [Navigating a paper](docs/reading-guide.md#navigate-a-paper) for its lifetime and supported destinations.
+Follow links embedded in a PDF and choose **Outline** in the page-navigation panel to read its nested outline. Explicit jumps keep your current zoom. Use **Back** / **Forward** or `Alt+Left` / `Alt+Right` to return to saved positions and zoom levels. Each open paper keeps its own temporary navigation history; see [Navigating a paper](docs/reading-guide.md#navigate-a-paper) for its lifetime and supported destinations.
 
 Reading, copying, highlighting, and annotation work without an AI connection.
 
-Use **导出笔记** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).
+Use **Export notes** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).
 
 <a name="connect-your-ai"></a>
 
 ## <img src="docs/images/icons/inline/chat.svg" width="22" height="22" alt="" /> Connect your AI
 
-Open the settings dialog using the gear icon in the upper-right corner.
+Open the settings dialog using the gear icon in the upper-right corner, then choose **AI service**.
 
 | Setting | What to enter |
 | --- | --- |
 | API address | Your provider's OpenAI-compatible base URL, usually ending in `/v1`. A full `/chat/completions` URL is also accepted. |
 | API key | Your provider's key. Leave it blank for a local service that does not require authentication. |
 | Model | The exact model ID supported by your provider. |
-| Translation language | The language you want to translate into. |
+| Translation target language | The language you want to translate into, independently of the interface language. |
 
 Save your settings to get started. The save-and-test action sends a short message and may use API credits. Remote services require HTTPS; local services can use HTTP.
 
 Select text to translate it or include it in a conversation. Responses support Markdown, tables, code blocks, and mathematical notation. You can stop generation at any time.
+
+The interface language controls application labels and messages. Changing it does not change your translation target, AI prompts or answer rules, provider/model/key, PDF text, notes or AI responses. Exported Markdown keeps its existing Chinese structural labels and original excerpts and notes.
 
 Aurelia supports the Chat Completions protocol. Providers that offer only Responses or other native protocols require a compatible gateway.
 

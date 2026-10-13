@@ -23,12 +23,25 @@ const launch = () => electron.launch({
   executablePath: install.executablePath,
   // Match the desktop E2E harness: coordinate-driven mouse drags need a fixed
   // scale on Windows. Native high-DPI rendering is covered by zoom.spec.ts.
-  args: [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'],
+  args: [`--user-data-dir=${profile}`, '--lang=en-US', '--force-device-scale-factor=1'],
   env: environment,
   timeout: 30_000,
 });
 let app = await launch();
 const errors = [];
+const screenshots = [];
+const capture = async (page, name) => {
+  const file = evidence(name) + '.png';
+  await page.screenshot({ path: file }); screenshots.push(file);
+};
+const resize = async width => app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setContentSize(width, 900), width);
+const switchLanguage = async (page, current, next) => {
+  await page.getByRole('button', { name: current === 'en' ? 'Settings' : '设置', exact: true }).click();
+  await page.getByRole('combobox', { name: current === 'en' ? 'Interface language' : '界面语言', exact: true }).selectOption(next);
+  await page.getByRole('button', { name: current === 'en' ? 'Save language' : '保存语言', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', next);
+  await page.getByRole('button', { name: next === 'en' ? 'Close settings' : '关闭设置', exact: true }).click();
+};
 try {
   let page = await app.firstWindow();
   const runtime = await app.evaluate(({ app }) => ({ name: app.getName(), version: app.getVersion(), packaged: app.isPackaged, appPath: app.getAppPath(), userData: app.getPath('userData') }));
@@ -37,9 +50,54 @@ try {
   assert.equal(install.version, expectedVersion);
   assert.equal(runtime.packaged, true);
   assert.ok(runtime.appPath.endsWith('app.asar'));
+  assert.equal(path.resolve(runtime.appPath).toLowerCase(), path.resolve(path.dirname(install.executablePath), 'resources/app.asar').toLowerCase());
   assert.equal(path.resolve(runtime.userData).toLowerCase(), profile.toLowerCase());
   assert.ok(page.url().startsWith('file:///'));
   page.on('pageerror', error => errors.push(error.message));
+  await mkdir('release/verification', { recursive: true });
+  await expect(page.getByRole('heading', { name: '欢迎使用 Aurelia / Welcome to Aurelia', exact: true })).toBeVisible();
+  await expect(page.locator('[data-workspace-ready="true"]')).toHaveCount(0);
+  await assert.rejects(readFile(path.join(profile, 'app-settings.json')), { code: 'ENOENT' });
+  await expect(page.getByRole('radio', { name: 'English', exact: true })).toBeChecked();
+  for (const width of [960, 1440]) { await resize(width); await capture(page, `packaged-first-choice-${width}`); }
+  await page.getByRole('radio', { name: 'English', exact: true }).check();
+  await page.getByRole('button', { name: '确认并继续 / Confirm and continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Open a paper', exact: true })).toBeVisible();
+  assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'app-settings.json'), 'utf8')), { locale: 'en' });
+  const menuLabels = () => app.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => item.label));
+  assert.ok((await menuLabels()).includes('File'));
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async (_window, options) => { globalThis.smokeOpenDialog = options; return { canceled: true, filePaths: [] }; }; });
+  await page.getByRole('button', { name: 'Open PDF', exact: true }).click();
+  await expect.poll(() => app.evaluate(() => Boolean(globalThis.smokeOpenDialog))).toBe(true);
+  const englishDialog = await app.evaluate(() => globalThis.smokeOpenDialog);
+  assert.equal(englishDialog.title, 'Open academic paper'); assert.equal(englishDialog.filters[0].name, 'PDF documents');
+  for (const width of [960, 1440]) {
+    await resize(width); await capture(page, `packaged-en-workspace-${width}`);
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await capture(page, `packaged-en-settings-${width}`);
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  }
+  // Configure a non-default translation target in this disposable profile.
+  // Saving General below must preserve the complete independent AI file.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'AI service', exact: true }).click();
+  await page.getByRole('textbox', { name: 'API endpoint', exact: true }).fill('http://127.0.0.1:9999/v1');
+  await page.getByRole('textbox', { name: 'Model name', exact: true }).fill('packaged-smoke-model');
+  await page.getByRole('combobox', { name: 'Translation target language', exact: true }).selectOption('日本語');
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('Settings saved');
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  const aiSettingsBefore = await readFile(path.join(profile, 'ai-settings.json'), 'utf8');
+  await switchLanguage(page, 'en', 'zh-CN');
+  assert.equal(await readFile(path.join(profile, 'ai-settings.json'), 'utf8'), aiSettingsBefore);
+  assert.equal((await page.evaluate(() => window.paperdesk.getAiSettings())).targetLanguage, '日本語');
+  assert.ok((await menuLabels()).includes('文件'));
+  for (const width of [960, 1440]) {
+    await resize(width); await capture(page, `packaged-zh-CN-workspace-${width}`);
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await capture(page, `packaged-zh-CN-settings-${width}`);
+    await page.getByRole('button', { name: '关闭设置', exact: true }).click();
+  }
   await page.getByRole('heading', { name: '打开论文' }).waitFor();
   assert.equal(await page.title(), 'Aurelia');
   assert.equal(await page.locator('.brand > span').first().textContent(), 'Aurelia');
@@ -54,6 +112,15 @@ try {
   }, [firstPaper, secondPaper]);
   await page.getByRole('button', { name: '导入论文', exact: true }).click();
   await page.locator('[data-page-number="1"][data-text-ready="true"] canvas').waitFor();
+  const readerGeneration = await page.locator('.workspace-reader-host').getAttribute('data-reader-generation');
+  const documentId = await page.locator('[data-document-id]').getAttribute('data-document-id');
+  assert.ok(readerGeneration && documentId);
+  await switchLanguage(page, 'zh-CN', 'en');
+  await expect(page.getByRole('combobox', { name: 'Zoom', exact: true })).toBeVisible();
+  assert.equal(await page.locator('.workspace-reader-host').getAttribute('data-reader-generation'), readerGeneration);
+  assert.equal(await page.locator('[data-document-id]').getAttribute('data-document-id'), documentId);
+  for (const width of [960, 1440]) { await resize(width); await capture(page, `packaged-en-reader-${width}`); }
+  await switchLanguage(page, 'en', 'zh-CN');
   assert.equal(await page.locator('.pdf-page').count(), 3);
   assert.equal(await page.title(), 'reading-demo.pdf — Aurelia');
   assert.ok((await page.locator('[data-page-number="1"] .textLayer').textContent()).includes('AURELIA'));
@@ -95,6 +162,20 @@ try {
   assert.ok(exported.includes(personalNote));
   assert.ok(exported.includes('第 1 页'));
   assert.ok(exported.includes('representation learning'));
+  await switchLanguage(page, 'zh-CN', 'en');
+  // Export and Settings naturally blur the editor, retaining the saved note.
+  await expect(page.locator('.annotation-note p')).toHaveText(personalNote);
+  const annotationQuote = await page.locator('.annotation-excerpt').textContent();
+  assert.ok(annotationQuote);
+  await expect(page.locator('.annotation-marker').first()).toHaveAttribute('aria-label', `View annotation: ${annotationQuote.slice(0, 40)}`);
+  await expect(page.locator('.annotation-marker').first()).toHaveAttribute('title', personalNote);
+  await page.getByRole('button', { name: 'Export notes', exact: true }).click();
+  await page.getByText('Notes exported', { exact: true }).waitFor();
+  assert.equal(await readFile(notesFile, 'utf8'), exported);
+  for (const width of [960, 1440]) { await resize(width); await capture(page, `packaged-en-annotations-${width}`); }
+  await switchLanguage(page, 'en', 'zh-CN');
+  await expect(page.locator('.annotation-marker').first()).toHaveAttribute('aria-label', `查看批注：${annotationQuote.slice(0, 40)}`);
+  await expect(page.locator('.annotation-marker').first()).toHaveAttribute('title', personalNote);
   await mkdir('release/verification', { recursive: true });
   await copyFile(notesFile, evidence('notes-export-example') + '.md');
   await page.screenshot({ path: evidence('packaged-reader') + '.png' });
@@ -129,6 +210,8 @@ try {
   // installed binary against the same disposable profile to prove persistence.
   await app.close(); app = await launch(); page = await app.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
+  await expect(page.getByRole('heading', { name: /Welcome to Aurelia/ })).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.locator('.workspace-reader-host')).toHaveAttribute('data-reader-id', firstId);
   await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('3');
   await expect(page.getByRole('combobox', { name: '缩放比例' })).toHaveValue('1.25');
@@ -206,14 +289,35 @@ try {
     return Math.abs(root.scrollTop - Math.max(0, Math.min(target, root.scrollHeight - root.clientHeight)));
   })).toBeLessThan(1);
   await page.screenshot({ path: evidence('packaged-outline-1440') + '.png' });
-  await page.setViewportSize({ width: 960, height: 720 });
+  await resize(960);
   await expect(page.getByRole('button', { name: '后退', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '前进', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '论文库', exact: true })).toBeVisible();
   await page.screenshot({ path: evidence('packaged-navigation-960') + '.png' });
+  await switchLanguage(page, 'zh-CN', 'en');
+  assert.equal(await readFile(path.join(profile, 'ai-settings.json'), 'utf8'), aiSettingsBefore);
+  assert.equal((await page.evaluate(() => window.paperdesk.getAiSettings())).targetLanguage, '日本語');
+  for (const width of [960, 1440]) { await resize(width); await capture(page, `packaged-en-navigation-${width}`); }
+  // Fit mode and resized viewports can change which physical page is current.
+  // Capture the final actual view, then require that same view after restart.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const englishPageBeforeRestart = await page.getByRole('textbox', { name: 'Page number', exact: true }).inputValue();
+  const englishZoomBeforeRestart = await page.getByRole('combobox', { name: 'Zoom', exact: true }).inputValue();
+  await app.close(); app = await launch(); page = await app.firstWindow();
+  page.on('pageerror', error => errors.push(error.message));
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('textbox', { name: 'Page number', exact: true })).toHaveValue(englishPageBeforeRestart);
+  await expect(page.getByRole('combobox', { name: 'Zoom', exact: true })).toHaveValue(englishZoomBeforeRestart);
+  await expect(page.getByRole('heading', { name: /Welcome to Aurelia/ })).toHaveCount(0);
+  await expect(page.locator('.document-label')).toHaveText('navigation.pdf');
+  assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'app-settings.json'), 'utf8')), { locale: 'en' });
+  assert.equal(await readFile(path.join(profile, 'ai-settings.json'), 'utf8'), aiSettingsBefore);
+  assert.ok((await menuLabels()).includes('File'));
+  await capture(page, 'packaged-en-restarted');
   assert.deepEqual(await readFile(navigationPaper), await readFile('tests/fixtures/navigation.pdf'));
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, appPath: runtime.appPath, localFileLoaded: true, pages: 3, twoColumnCopy: true, fullTextSearch: true, notesExport: true, groupedMultiImport: true, independentViews: true, tabsSwitch: true, restartRestore: true, nativeLinkClick: true, nestedOutlineClick: true, numericZoomPreserved: true, fitPreserved: true, backForwardPositionAndZoom: true, narrowControls: true, sourceBytesPreserved: true, profile, executable: install.executablePath, screenshots: ['packaged-reader', 'packaged-workspace', 'packaged-restored-workspace', 'packaged-outline-1440', 'packaged-navigation-960'].map(name => evidence(name) + '.png') }, null, 2));
+  screenshots.push(...['packaged-reader', 'packaged-workspace', 'packaged-restored-workspace', 'packaged-outline-1440', 'packaged-navigation-960'].map(name => evidence(name) + '.png'));
+  console.log(JSON.stringify({ result: 'passed', name: runtime.name, version: runtime.version, branding: true, packaged: runtime.packaged, appPath: runtime.appPath, userData: runtime.userData, localFileLoaded: true, pages: 3, firstChoiceEnglish: true, explicitConfirmation: true, liveChineseEnglishSwitch: true, readerIdentityPreserved: true, translationTargetIndependent: true, nativeEnglishMenuAndDialog: true, restartSuppressesChooserBothLocales: true, annotationMarkerAccessibleNames: true, twoColumnCopy: true, fullTextSearch: true, notesExport: true, exportedMarkdownIdenticalAcrossLanguages: true, groupedMultiImport: true, independentViews: true, tabsSwitch: true, restartRestore: true, nativeLinkClick: true, nestedOutlineClick: true, numericZoomPreserved: true, fitPreserved: true, backForwardPositionAndZoom: true, narrowControls: true, sourceBytesPreserved: true, profile, executable: install.executablePath, screenshots }, null, 2));
 } finally {
   await app.close();
 }

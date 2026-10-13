@@ -2,14 +2,22 @@
 
 [Back to the project](../README.md)
 
+## Choose the interface language
+
+Choose **English** or **简体中文** on first launch and click **Confirm and continue**. Upgrading to 0.9.0 asks once for any existing profile without a confirmed preference. The system language only suggests a selection. Closing before confirming leaves the choice pending for the next launch.
+
+Use **Settings → General → Interface language** to change the interface immediately. Saving does not require an AI connection and preserves the current document, position, zoom, navigation and search, notes, active AI response and unsaved AI fields. The preference is stored separately in `app-settings.json` in your stable user-data directory and survives restarts and versioned installations. If saving fails, the previous language remains active and you can retry. Unreadable settings require recovery or retry; malformed files are preserved before a confirmed replacement.
+
+The labels below use the English interface. Application labels and messages follow your chosen language; PDF text, filenames, group names, notes and AI responses keep their original content. **Settings → AI service → Translation target language** independently controls translation output. Switching the interface does not change that target or the existing AI prompts and answer rules.
+
 ## Navigate a paper
 
 Click a reference, figure link or other native PDF link to follow its embedded destination. Aurelia uses the PDF's actual link metadata; plain reference text without a link stays ordinary text. Linked text remains selectable and copyable. Dragging a selection does not activate the link; a focused link can also be activated from the keyboard.
 
-Open the left navigation panel with **切换页码导航**, then choose **目录** for the PDF's native outline or **页码** for its physical page list. Expand or collapse nested outline sections and click an item to jump. A PDF without an outline shows an empty state, and failed metadata can be retried. The library remains accessible from **论文库**.
+Open the left navigation panel with **Toggle page navigation**, then choose **Outline** for the PDF's native outline or **Page number** for its physical page list. Expand or collapse nested outline sections and click an item to jump. A PDF without an outline shows an empty state, and failed metadata can be retried. The library remains accessible from **Library**.
 
 - Internal links and outline items support named and direct PDF destinations, including cropped and intrinsically rotated pages. Their embedded zoom is ignored: jumps preserve your current numeric zoom or fit-to-width mode. Manual page rotation is not provided.
-- **后退** and **前进**, or `Alt+Left` and `Alt+Right`, restore the position and zoom saved by explicit jumps. Page controls, page-list and outline items, native links, search matches, annotation locations and AI source references use the same history. Passive scrolling and zoom changes do not add entries. Alt shortcuts are inactive while editing text, composing with an IME or using a modal dialog.
+- **Back** and **Forward**, or `Alt+Left` and `Alt+Right`, restore the position and zoom saved by explicit jumps. Page controls, page-list and outline items, native links, search matches, annotation locations and AI source references use the same history. Passive scrolling and zoom changes do not add entries. Alt shortcuts are inactive while editing text, composing with an IME or using a modal dialog.
 - Each open library entry has independent in-memory history, including copies with identical PDF contents. History survives switching papers and release of inactive PDF resources, holds up to 100 entries per direction, and clears when the paper closes, the app restarts or the content changes. Saved reading positions still restore after restart; Back/Forward history is not saved to disk.
 - Explicitly clicked HTTP(S) links open in the system browser after validation. Unsupported actions and invalid destinations show a message without moving the reader or changing its history. Aurelia never executes PDF scripts or opens local or remote files through PDF actions. If PDF.js exposes a safe HTTP(S) URL from an action, it is treated only as an explicit browser link.
 
@@ -21,7 +29,7 @@ Click the search icon beside the filename or press `Ctrl+F`. Type a word or phra
 
 - Typing updates the match count and page highlights without moving your reading position. Press `Enter` for the next match or `Shift+Enter` for the previous one. The first jump starts from your current page; after searching finishes, navigation wraps at the ends.
 - The current match has an orange outline; other matches use pale blue. You can still select, copy, highlight, and annotate text while search is open.
-- Search ignores case by default. Enable **区分大小写** to match case. Enable **忽略行末连字符** to match `framework` when the PDF breaks it as `frame-` / `work`; visible hyphens are preserved by default.
+- Search ignores case by default. Enable **Match case** to match case. Enable **Ignore line-end hyphens** to match `framework` when the PDF breaks it as `frame-` / `work`; visible hyphens are preserved by default.
 - Phrases can span lines within the same detected paragraph. Common font ligatures and soft hyphens are handled automatically. Search follows the selected text reading order; automatic columns keep separate detected paragraphs and columns apart. Search does not join phrases across pages or apply compatibility normalization to mathematical symbols.
 - During indexing, the bar shows the pages searched so far. A failed page is reported and can be retried; textless pages are reported separately. Scanned images require OCR, which is not available yet.
 - Press `Esc` or close the search bar to remove search highlights. Your position stays in place. Each open paper remembers its query, options and search-bar visibility while switching papers, including when an inactive PDF resource is released. Search memory clears on paper closure, app restart or changed content. Queries and indexes are not saved to disk.
@@ -57,7 +65,7 @@ Highlights remain aligned as pages are zoomed or resized and support selections 
 
 ## Export reading notes
 
-Open the **批注** tab and click **导出笔记**. Choose a location in the Windows Save As dialog to save an editable `.md` file for Obsidian, Typora, or another Markdown editor. The default filename is `<paper>-notes.md`.
+Open the **Annotations** tab and click **Export notes**. Choose a location in the Windows Save As dialog to save an editable `.md` file for Obsidian, Typora, or another Markdown editor. The default filename is `<paper>-notes.md`.
 
 - Each file includes the current paper's filename and all annotations, ordered by page and position. Each entry contains its physical PDF page number(s), original excerpt, and a **我的笔记** section when a note is present. Highlights without notes remain included.
 - Notes retain their original Markdown, including emphasis, lists, code blocks, and formulas. Excerpts are escaped as literal source text. Appearance and formula rendering depend on the receiving editor and its theme.
@@ -66,11 +74,11 @@ Open the **批注** tab and click **导出笔记**. Choose a location in the Win
 - Cancelling creates no file. Errors leave the reading records unchanged and let you retry. Use the `.md` extension; selecting a different extension is rejected to avoid overwriting a PDF or another file type.
 - The exported file is independent. Editing it does not update Aurelia, and exporting again does not merge those external edits. Choose a new filename if you want to keep both versions.
 
-Exported notes use Chinese structural labels matching the app; excerpts and notes retain their original languages. Export is for editing and sharing, not for restoring Aurelia sessions.
+Exported notes keep Chinese structural labels independently of the interface language; excerpts and notes retain their original languages. Export is for editing and sharing, not for restoring Aurelia sessions.
 
 ## Translation and conversations
 
-Configure the API address, key, model, and target language in the AI settings dialog. See [Connect your AI](../README.md#connect-your-ai).
+Configure the API address, key, model, and target language in **Settings → AI service**. The translation target is independent of the interface language. See [Connect your AI](../README.md#connect-your-ai).
 
 Translations can be stopped, retried, and copied. Each translation is kept in the history. Conversations support quoted selections, follow-up questions, stopping, retrying, and starting a new conversation. Older conversations remain available in the history selector.
 
@@ -98,6 +106,7 @@ The default Windows user-data directory is `%APPDATA%\paperdesk\`. The earlier p
 
 | Data | Storage |
 | --- | --- |
+| Interface language | `app-settings.json`; contains only your confirmed local interface preference |
 | API settings | `ai-settings.json`; the key is encrypted by the operating system |
 | Reading sessions | `reading-sessions/`; JSON containing conversations, translations, annotations, and quotations |
 | Recent files | `recent.json` |

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — 2026-10-13
+
+- Choose English or Simplified Chinese once before entering the workspace, including when upgrading an existing profile. The system language only suggests a selection; explicit confirmation saves your preference.
+- Switch the interface immediately in Settings → General, with localized controls, accessible labels, application messages, native menus and file-dialog labels.
+- Keep the current paper, reading position, zoom, navigation and search state, notes, ongoing AI responses and unsaved settings while changing language.
+- Store the confirmed language separately from AI settings in the stable local profile. Failed saves retain the previous language and allow retry; unreadable or damaged settings are preserved for recovery.
+- Keep translation targets independently configured in Settings → AI service. PDF text, personal notes, AI responses and exported Markdown retain their existing content and languages.
+
 ## 0.8.0 — 2026-10-13
 
 - Follow native PDF links and named page actions, including offset destinations on cropped or intrinsically rotated pages, while preserving the current numeric zoom or fit-to-width mode.
