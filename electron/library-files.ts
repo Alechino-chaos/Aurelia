@@ -1,3 +1,4 @@
+import { appError, backendErrorMessage } from './i18n.js';
 import { open } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -9,28 +10,28 @@ export async function readPdf(filePath: unknown) {
   normalizeLibraryPath(filePath);
   const absolute = path.win32.normalize(filePath as string);
   if (path.win32.extname(absolute).toLowerCase() !== '.pdf')
-    throw new Error('请选择 PDF 文件。');
+    throw appError('请选择 PDF 文件。');
   const file = await open(absolute, 'r');
   try {
     const info = await file.stat();
     if (!info.isFile())
-      throw new Error('这不是一个可读取的文件。');
+      throw appError('这不是一个可读取的文件。');
     if (info.size > 250 * 1024 * 1024)
-      throw new Error('第一版支持 250 MB 以内的 PDF。请先压缩此文件。');
+      throw appError('第一版支持 250 MB 以内的 PDF。请先压缩此文件。');
     // Bound reads even if the source grows between stat and read; never allocate from renderer input.
     const bytes = Buffer.alloc(info.size);
     let offset = 0;
     while (offset < bytes.length) {
       const result = await file.read(bytes, offset, bytes.length - offset, offset);
       if (result.bytesRead === 0)
-        throw new Error('文件在读取时改变，请重试。');
+        throw appError('文件在读取时改变，请重试。');
       offset += result.bytesRead;
     }
     const after = await file.stat();
     if (after.size !== info.size || after.mtimeMs !== info.mtimeMs)
-      throw new Error('文件在读取时改变，请重试。');
+      throw appError('文件在读取时改变，请重试。');
     if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-')))
-      throw new Error('文件内容不是有效的 PDF。');
+      throw appError('文件内容不是有效的 PDF。');
     return { path: absolute, name: path.win32.basename(absolute), bytes: new Uint8Array(bytes), documentId: createHash('sha256').update(bytes).digest('hex') };
   }
   finally {
@@ -52,10 +53,10 @@ export class LibraryFiles {
   }
   async importPaths(paths: string[], groupId?: string): Promise<LibraryImportResult> {
     if (!Array.isArray(paths) || paths.length > 1000 || paths.some(p => typeof p !== 'string'))
-      throw new Error('无效的导入列表。');
+      throw appError('无效的导入列表。');
     const initial = await this.store.get();
     if (groupId !== undefined && !initial.groups.some(g => g.id === libraryId(groupId)))
-      throw new Error('未找到这个分组。');
+      throw appError('未找到这个分组。');
     const importedIds: string[] = [], errors: LibraryImportResult['errors'] = [];
     for (const filePath of paths) {
       try {
@@ -67,7 +68,7 @@ export class LibraryFiles {
           importedIds.push(entry.id);
       }
       catch (error) {
-        errors.push({ name: path.win32.basename(filePath), message: error instanceof Error ? error.message : '论文未能导入。' });
+        errors.push({ name: path.win32.basename(filePath), message: backendErrorMessage(error instanceof Error ? error : appError('论文未能导入。')) });
       }
     }
     return { state: await this.store.get(), importedIds, errors };
@@ -85,7 +86,7 @@ export class LibraryFiles {
   async acceptRelocationImport(id: string): Promise<LibraryImportResult> {
     const entry = await this.store.entry(id), candidate = this.relocationCandidates.get(id);
     if (!candidate)
-      throw new Error('请先选择重新定位的文件。');
+      throw appError('请先选择重新定位的文件。');
     const result = await this.importPaths([candidate], entry.groupId ?? undefined);
     this.relocationCandidates.delete(id);
     return result;
@@ -96,7 +97,7 @@ export class LibraryFiles {
   }
   async remove(id: string, sessions: SessionStore, cancel: (requestId: string) => void) {
     const state = await this.store.get(), entry = state.entries.find(e => e.id === libraryId(id));
-    if (!entry) throw new Error('未找到这篇论文。');
+    if (!entry) throw appError('未找到这篇论文。');
     if (entry.documentId) {
       let pending: string[] = [], loaded = false;
       try { pending = sessions.pendingIds(entry.documentId); loaded = true; }

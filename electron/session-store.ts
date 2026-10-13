@@ -1,3 +1,4 @@
+import { appError, backendErrorMessage } from './i18n.js';
 import { mkdir, readFile, writeFile, rename, copyFile, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -12,7 +13,7 @@ export class SessionStore {
   constructor(private directory: string, private notify: (event: SessionSaveEvent) => void = () => {}) {}
   private file(key: string) { return path.join(this.directory, `${documentKey(key)}.json`); }
   private async read(file: string, key: string) {
-    if ((await stat(file)).size > MAX_SESSION_BYTES) throw new Error('历史记录文件过大。');
+    if ((await stat(file)).size > MAX_SESSION_BYTES) throw appError('历史记录文件过大。');
     return validateSession(JSON.parse(await readFile(file, 'utf8')), key);
   }
   async load(key: string, fileName: string): Promise<ReadingSession> {
@@ -29,7 +30,7 @@ export class SessionStore {
         else {
           // Never replace an unreadable history with an empty document.
           try { data = await this.read(`${this.file(key)}.bak`, key); }
-          catch { throw new Error('无法读取这篇论文的历史记录，原文件已保留。请重试或检查本机存储。'); }
+          catch { throw appError('无法读取这篇论文的历史记录，原文件已保留。请重试或检查本机存储。'); }
           // Preserve the corrupt primary before recovering the last good copy.
           await copyFile(this.file(key), `${this.file(key)}.corrupt-${Date.now()}`);
           await copyFile(`${this.file(key)}.bak`, this.file(key));
@@ -44,7 +45,7 @@ export class SessionStore {
   }
   private entry(key: string) {
     const entry = this.entries.get(documentKey(key));
-    if (!entry) throw new Error('请先打开这篇论文的阅读记录。');
+    if (!entry) throw appError('请先打开这篇论文的阅读记录。');
     return entry;
   }
   annotationSnapshot(key: string): Annotation[] {
@@ -64,7 +65,7 @@ export class SessionStore {
     try { await this.flush(key); }
     catch (error) {
       const id = action.type === 'chat' ? action.answer.id : action.type === 'translation' ? action.entry.id : undefined;
-      if (id) this.changed(key, applySessionEvent(this.entry(key).data, { id, type: 'error', message: (error as Error).message }));
+      if (id) this.changed(key, applySessionEvent(this.entry(key).data, { id, type: 'error', message: backendErrorMessage(error) }));
       throw error;
     }
   }
@@ -96,7 +97,7 @@ export class SessionStore {
         while (entry.saved !== entry.revision) {
           const revision = entry.revision;
           const json = JSON.stringify(entry.data);
-          if (Buffer.byteLength(json, 'utf8') > MAX_SESSION_BYTES) throw new Error('记录超过本机单篇容量限制。');
+          if (Buffer.byteLength(json, 'utf8') > MAX_SESSION_BYTES) throw appError('记录超过本机单篇容量限制。');
           const file = this.file(key), temp = `${file}.tmp`;
           await writeFile(temp, json, { encoding: 'utf8', mode: 0o600, flush: true });
           try { await copyFile(file, `${file}.bak`); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
@@ -105,9 +106,9 @@ export class SessionStore {
         }
         this.notify({ documentId: key, status: 'saved' });
       } catch {
-        const message = '阅读记录未能保存到本机，请检查磁盘空间或目录权限后重试。';
-        this.notify({ documentId: key, status: 'error', message });
-        throw new Error(message);
+        const error = appError('阅读记录未能保存到本机，请检查磁盘空间或目录权限后重试。');
+        this.notify({ documentId: key, status: 'error', message: backendErrorMessage(error) });
+        throw error;
       }
     })();
     entry.writing = operation;

@@ -28,6 +28,8 @@ coverage/
 *.p12
 *.pfx
 ai-settings.json
+app-settings.json
+app-settings.json.*
 library.json
 library.json.*
 reading-sessions/

@@ -2,6 +2,8 @@ import type { AiEvent, AiRequest, AiSettings, AiSettingsInput } from '../electro
 import type { HighlightRegion, ReadingSession, SessionAction, SessionSaveEvent } from '../electron/session-types';
 import type { NotesExportResult } from '../electron/notes-export';
 import type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView } from '../electron/library-types';
+import type { AppSettings, UiLocale } from '../electron/i18n';
+export type { AppSettings, UiLocale } from '../electron/i18n';
 export type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView, LibraryEntry, LibraryGroup } from '../electron/library-types';
 export type OpenedFile = { name: string; bytes: Uint8Array; id?: string; documentId?: string; libraryId?: string; view?: ReadingView };
 export type RecentFile = { name: string; id: string; openedAt: number };
@@ -17,6 +19,8 @@ export type SelectedText = {
 declare global {
   interface Window {
     paperdesk?: {
+      getAppSettings(): Promise<AppSettings>;
+      saveAppSettings(input: { locale: UiLocale }): Promise<AppSettings>;
       openPdf(): Promise<OpenedFile | null>;
       getRecent(): Promise<RecentFile[]>;
       openRecent(id: string): Promise<OpenedFile>;

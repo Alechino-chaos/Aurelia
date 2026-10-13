@@ -2,8 +2,11 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { AiEvent, AiRequest, AiSettingsInput } from './ai-types.js';
 import type { SessionAction, SessionSaveEvent } from './session-types.js';
 import type { LibraryAction } from './library-types.js';
+import type { UiLocale } from './i18n.js';
 
 contextBridge.exposeInMainWorld('paperdesk', {
+  getAppSettings: () => ipcRenderer.invoke('app:get-settings'),
+  saveAppSettings: (input: { locale: UiLocale }) => ipcRenderer.invoke('app:save-settings', input),
   openPdf: () => ipcRenderer.invoke('pdf:open'),
   getRecent: () => ipcRenderer.invoke('pdf:recent'),
   openRecent: (id: string) => ipcRenderer.invoke('pdf:open-recent', id),

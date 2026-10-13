@@ -1,3 +1,5 @@
+import { appError, appMessage, backendErrorMessage, setUiLocale, suggestUiLocale } from './i18n.js';
+import { AppSettingsStore } from './app-settings.js';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
 import { validateExternalUrl } from './external-url.js';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -36,13 +38,14 @@ const sessions = new SessionStore(path.join(app.getPath('userData'), 'reading-se
 });
 const library = new LibraryStore(app.getPath('userData'));
 const libraryFiles = new LibraryFiles(library);
+let appSettings: AppSettingsStore;
 let closeCaptureEnabled = false;
 let pendingCloseCapture: { token: string; complete: (error?: string) => void } | undefined;
 async function captureBeforeClose(target: BrowserWindow) {
   if (!closeCaptureEnabled || target.webContents.isDestroyed()) return;
   await new Promise<void>((resolve, reject) => {
     const token = randomUUID();
-    const timer = setTimeout(() => { pendingCloseCapture = undefined; reject(new Error('阅读位置尚未确认保存。')); }, 5000);
+    const timer = setTimeout(() => { pendingCloseCapture = undefined; reject(appError('阅读位置尚未确认保存。')); }, 5000);
     pendingCloseCapture = { token, complete: error => {
       clearTimeout(timer); pendingCloseCapture = undefined;
       if (error) reject(new Error(error)); else resolve();
@@ -76,9 +79,10 @@ function handle(channel: string, callback: (...args: any[]) => unknown) {
     const url = event.senderFrame?.url;
     const trustedUrl = url === productionUrl || (!!developmentUrl && (url === developmentUrl || url === `${developmentUrl}/`));
     if (!url || !trustedUrl || event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame) {
-      throw new Error('Unsupported sender');
+      throw appError('不支持的请求来源。');
     }
-    return callback(...args);
+    // Electron strips custom Error fields. Encode only errors with application provenance.
+    return Promise.resolve().then(() => callback(...args)).catch(error => { throw new Error(backendErrorMessage(error)); });
   });
 }
 
@@ -110,30 +114,38 @@ function createWindow() {
     closing = true;
     cancelAllAi();
     void captureBeforeClose(target).then(() => Promise.all([sessions.close(), library.flush()])).then(() => { canClose = true; target.close(); }).catch(async () => {
-      const result = await dialog.showMessageBox(target, { type: 'warning', title: '阅读记录尚未保存',
-        message: '阅读记录或论文库未能写入本机。', detail: '请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容和阅读位置。',
-        buttons: ['重试保存', '取消关闭', '仍然关闭'], defaultId: 0, cancelId: 1 });
+      const result = await dialog.showMessageBox(target, { type: 'warning', title: appMessage('阅读记录尚未保存'),
+        message: appMessage('阅读记录或论文库未能写入本机。'), detail: appMessage('请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容和阅读位置。'),
+        buttons: [appMessage('重试保存'), appMessage('取消关闭'), appMessage('仍然关闭')], defaultId: 0, cancelId: 1 });
       closing = false;
       if (result.response === 0) target.close();
       else if (result.response === 2) { canClose = true; target.close(); }
     });
   });
-  window.on('closed', () => { cancelAllAi(); closeCaptureEnabled = false; pendingCloseCapture?.complete('窗口已经关闭。'); window = null; });
+  window.on('closed', () => { cancelAllAi(); closeCaptureEnabled = false; pendingCloseCapture?.complete(appMessage('窗口已经关闭。')); window = null; });
+  refreshApplicationMenu();
+}
+
+function refreshApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: '文件', submenu: [
-      { label: '打开 PDF…', accelerator: 'CmdOrCtrl+O', click: () => window?.webContents.send('open-requested') },
-      { type: 'separator' }, { role: 'quit', label: '退出' },
+    { label: appMessage('文件'), submenu: [
+      { label: appMessage('打开 PDF…'), accelerator: 'CmdOrCtrl+O', click: () => window?.webContents.send('open-requested') },
+      { type: 'separator' }, { role: 'quit', label: appMessage('退出') },
     ] },
-    { label: '编辑', submenu: [{ role: 'copy', label: '复制' }, { role: 'selectAll', label: '全选' }] },
-    { label: '视图', submenu: [
-      { role: 'togglefullscreen', label: '全屏' },
-      ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const, label: '开发者工具' }] : []),
+    { label: appMessage('编辑'), submenu: [{ role: 'copy', label: appMessage('复制') }, { role: 'selectAll', label: appMessage('全选') }] },
+    { label: appMessage('视图'), submenu: [
+      { role: 'togglefullscreen', label: appMessage('全屏') },
+      ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const, label: appMessage('开发者工具') }] : []),
     ] },
   ]));
 }
 
 void app.whenReady().then(async () => {
 if (!primaryInstance) return;
+appSettings = new AppSettingsStore(app.getPath('userData'), app.getLocale());
+setUiLocale(suggestUiLocale(app.getLocale()));
+// Leave startup usable when permissions block the preference; the first-run gate can retry its load.
+await appSettings.load().then(settings => setUiLocale(settings.locale ?? settings.suggestedLocale)).catch(() => {});
 await loadAiSettings();
 try {
   const value: unknown = JSON.parse(await readFile(recentFile(), 'utf8'));
@@ -144,14 +156,22 @@ try {
 // Keep the window usable for a visible recovery error; getLibrary continues to reject protected files.
 await library.load(recent).catch(() => {});
 
+handle('app:get-settings', () => appSettings.load());
+handle('app:save-settings', async (input: Parameters<AppSettingsStore['save']>[0]) => {
+  const settings = await appSettings.save(input);
+  setUiLocale(settings.locale!);
+  refreshApplicationMenu();
+  return settings;
+});
+
 handle('pdf:open', async () => {
-  const result = await dialog.showOpenDialog(window!, { title: '打开学术论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile'] });
+  const result = await dialog.showOpenDialog(window!, { title: appMessage('打开学术论文'), filters: [{ name: appMessage('PDF 文档'), extensions: ['pdf'] }], properties: ['openFile'] });
   return result.canceled ? null : openDocument(result.filePaths[0]);
 });
 handle('pdf:recent', () => recent.map(({ id, name, openedAt }) => ({ id, name, openedAt })));
 handle('pdf:open-recent', async (id: unknown) => {
   const entry = recent.find((item) => item.id === id);
-  if (!entry) throw new Error('未找到这条最近记录，请重新打开文件。');
+  if (!entry) throw appError('未找到这条最近记录，请重新打开文件。');
   return openDocument(entry.path);
 });
 handle('pdf:open-drop', (filePath: string) => openDocument(filePath));
@@ -166,28 +186,28 @@ handle('library:update', async (action: LibraryAction) => {
   return library.update(action);
 });
 handle('library:import', async (groupId?: string) => {
-  const result = await dialog.showOpenDialog(window!, { title: '导入论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
+  const result = await dialog.showOpenDialog(window!, { title: appMessage('导入论文'), filters: [{ name: appMessage('PDF 文档'), extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
   return libraryFiles.importPaths(result.canceled ? [] : result.filePaths, groupId);
 });
 handle('library:import-drop', (filePaths: string[], groupId?: string) => libraryFiles.importPaths(filePaths, groupId));
 handle('library:open', (id: string) => libraryFiles.open(id));
 handle('library:relocate', async (id: string) => {
   await library.entry(id);
-  const result = await dialog.showOpenDialog(window!, { title: '重新定位论文', filters: [{ name: 'PDF 文档', extensions: ['pdf'] }], properties: ['openFile'] });
+  const result = await dialog.showOpenDialog(window!, { title: appMessage('重新定位论文'), filters: [{ name: appMessage('PDF 文档'), extensions: ['pdf'] }], properties: ['openFile'] });
   return result.canceled ? { state: await library.get(), outcome: 'canceled' } : libraryFiles.relocate(id, result.filePaths[0]);
 });
 handle('library:accept-relocation-import', (id: string) => libraryFiles.acceptRelocationImport(id));
 handle('library:reveal', (id: string) => libraryFiles.reveal(id, filePath => shell.showItemInFolder(filePath)));
 handle('library:close-listener', (enabled: unknown) => {
-  if (typeof enabled !== 'boolean') throw new Error('无效的关闭通知设置。');
+  if (typeof enabled !== 'boolean') throw appError('无效的关闭通知设置。');
   closeCaptureEnabled = enabled;
 });
 handle('library:close-captured', (token: unknown, error?: unknown) => {
-  if (typeof token !== 'string' || (error !== undefined && (typeof error !== 'string' || error.length > 2000))) throw new Error('无效的关闭确认。');
+  if (typeof token !== 'string' || (error !== undefined && (typeof error !== 'string' || error.length > 2000))) throw appError('无效的关闭确认。');
   if (pendingCloseCapture?.token === token) pendingCloseCapture.complete(error as string | undefined);
 });
 handle('clipboard:write', (value: unknown) => {
-  if (typeof value !== 'string' || value.length > 10_000_000) throw new Error('无效的复制内容。');
+  if (typeof value !== 'string' || value.length > 10_000_000) throw appError('无效的复制内容。');
   clipboard.writeText(value);
 });
 handle('navigation:open-external', (value: unknown) => shell.openExternal(validateExternalUrl(value)));
@@ -206,12 +226,12 @@ handle('session:suspend', (key: string) => {
 handle('session:flush', (key: string) => sessions.flush(key));
 let notesExportPending = false;
 handle('session:export-notes', async (key: string, fileName: string) => {
-  if (notesExportPending) throw new Error('已有笔记正在导出，请先完成或取消保存。');
+  if (notesExportPending) throw appError('已有笔记正在导出，请先完成或取消保存。');
   notesExportPending = true;
   try {
     return await exportNotes(sessions, key, fileName, async suggested => {
-      const result = await dialog.showSaveDialog(window!, { title: '导出阅读笔记', defaultPath: suggested,
-        filters: [{ name: 'Markdown 笔记', extensions: ['md'] }], properties: ['showOverwriteConfirmation'] });
+      const result = await dialog.showSaveDialog(window!, { title: appMessage('导出阅读笔记'), defaultPath: suggested,
+        filters: [{ name: appMessage('Markdown 笔记'), extensions: ['md'] }], properties: ['showOverwriteConfirmation'] });
       return result.canceled ? null : result.filePath ?? null;
     });
   } finally { notesExportPending = false; }
@@ -219,12 +239,12 @@ handle('session:export-notes', async (key: string, fileName: string) => {
 handle('ai:start', (request: unknown, documentId?: string) => {
   const recipient = window?.webContents;
   const parsed = validateRequest(request);
-  if (documentId !== undefined && !sessions.hasRequest(documentId, parsed.id, parsed.kind)) throw new Error('这条请求的阅读记录尚未保存，请重试。');
+  if (documentId !== undefined && !sessions.hasRequest(documentId, parsed.id, parsed.kind)) throw appError('这条请求的阅读记录尚未保存，请重试。');
   return runAi(parsed, event => {
     if (documentId && sessions.hasRequest(documentId, parsed.id, parsed.kind)) sessions.record(documentId, event);
     if (recipient && !recipient.isDestroyed()) recipient.send('ai:event', event);
   }).catch(error => {
-    if (documentId && sessions.hasRequest(documentId, parsed.id, parsed.kind)) sessions.record(documentId, { id: parsed.id, type: 'error', message: error instanceof Error ? error.message : '请求未能开始。' });
+    if (documentId && sessions.hasRequest(documentId, parsed.id, parsed.kind)) sessions.record(documentId, { id: parsed.id, type: 'error', message: backendErrorMessage(error instanceof Error ? error : appError('请求未能开始。')) });
     throw error;
   });
 });

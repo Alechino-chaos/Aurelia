@@ -1,7 +1,8 @@
+import { appError } from './i18n.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { LibraryAction, LibraryEntry, LibraryState, ReadingView } from './library-types.js';
-const fail = (): never => { throw new Error('无效的论文库数据或操作。'); };
+const fail = (): never => { throw appError('无效的论文库数据或操作。'); };
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return fail();
@@ -54,7 +55,7 @@ export function emptyLibrary(): LibraryState {
 export function validateLibrary(value: unknown): LibraryState {
   const raw = object(value);
   if (typeof raw.version === 'number' && raw.version > 1)
-    throw new Error('论文库由较新版本创建，原文件已保留。请升级 Aurelia。');
+    throw appError('论文库由较新版本创建，原文件已保留。请升级 Aurelia。');
   keys(raw, ['version', 'groups', 'entries', 'openIds', 'activeId', 'mode', 'sidebarWidth', 'collapsedGroupIds', 'recovery']);
   if (raw.version !== 1 || !Array.isArray(raw.groups) || raw.groups.length > 1000 || !Array.isArray(raw.entries) || raw.entries.length > 10000)
     return fail();
@@ -159,7 +160,7 @@ export function applyLibraryAction(current: LibraryState, input: unknown): Libra
     case 'view': {
       const e = entry();
       if (action.documentId !== undefined && action.documentId !== e.documentId)
-        throw new Error('论文内容已改变，请重新读取阅读位置。');
+        throw appError('论文内容已改变，请重新读取阅读位置。');
       e.view = normalizeReadingView(action.view, e.view);
       break;
     }

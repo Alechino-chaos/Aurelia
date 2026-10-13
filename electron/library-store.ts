@@ -1,3 +1,4 @@
+import { appError, backendErrorMessage, translateAppMessage } from './i18n.js';
 import { mkdir, readFile, writeFile, rename, copyFile, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -22,12 +23,12 @@ export class LibraryStore {
   }
   private assertRead(filePath: string, generation?: number) {
     if (generation !== undefined && this.pathReads.get(normalizeLibraryPath(filePath)) !== generation)
-      throw new Error('论文读取已被更新的请求替代，请重新打开。');
+      throw appError('论文读取已被更新的请求替代，请重新打开。');
   }
   private file() { return path.join(this.directory, 'library.json'); }
   private async read(file: string) {
     if ((await stat(file)).size > MAX_BYTES)
-      throw new Error('论文库文件过大，原文件已保留。');
+      throw appError('论文库文件过大，原文件已保留。');
     return validateLibrary(JSON.parse(await readFile(file, 'utf8')));
   }
   async load(recent: {
@@ -46,7 +47,7 @@ export class LibraryStore {
         data = await this.read(file);
       }
       catch (error) {
-        if (error instanceof Error && error.message.includes('较新版本'))
+        if (error instanceof Error && translateAppMessage(error.message, 'zh-CN') === '论文库由较新版本创建，原文件已保留。请升级 Aurelia。')
           throw error;
         primaryMissing = missing(error);
         let recovered: LibraryState | undefined, source: 'backup' | 'temporary' | undefined, candidateExists = false;
@@ -58,7 +59,7 @@ export class LibraryStore {
             break;
           }
           catch (backupError) {
-            if (backupError instanceof Error && backupError.message.includes('较新版本'))
+            if (backupError instanceof Error && translateAppMessage(backupError.message, 'zh-CN') === '论文库由较新版本创建，原文件已保留。请升级 Aurelia。')
               throw backupError;
             if (!missing(backupError))
               candidateExists = true;
@@ -71,7 +72,7 @@ export class LibraryStore {
           const recoveryFile = `${file}.recover`;
           await copyFile(source === 'backup' ? `${file}.bak` : `${file}.tmp`, recoveryFile);
           await rename(recoveryFile, file);
-          data = { ...recovered, recovery: { source, message: '论文库已从可用副本恢复，原文件已保留。' } };
+          data = { ...recovered, recovery: { source, message: backendErrorMessage(appError('论文库已从可用副本恢复，原文件已保留。')) } };
         }
         else if (primaryMissing && !candidateExists) {
           data = emptyLibrary();
@@ -91,7 +92,7 @@ export class LibraryStore {
           await this.persist();
         }
         else
-          throw new Error('无法读取论文库，原文件已保留。请检查本机存储或恢复备份。');
+          throw appError('无法读取论文库，原文件已保留。请检查本机存储或恢复备份。');
       }
       this.state = data;
       return structuredClone(data);
@@ -112,7 +113,7 @@ export class LibraryStore {
   async entry(id: unknown): Promise<LibraryEntry> {
     const data = await this.get(), found = data.entries.find(e => e.id === libraryId(id));
     if (!found)
-      throw new Error('未找到这篇论文。');
+      throw appError('未找到这篇论文。');
     return found;
   }
   async update(action: LibraryAction): Promise<LibraryState> {
@@ -139,7 +140,7 @@ export class LibraryStore {
       this.assertRead(input.path, generation);
       const canonical = normalizeLibraryPath(input.path);
       if (groupId !== null && !this.state!.groups.some(g => g.id === libraryId(groupId)))
-        throw new Error('未找到这个分组。');
+        throw appError('未找到这个分组。');
       const data = structuredClone(this.state!);
       let entry = data.entries.find(e => normalizeLibraryPath(e.path) === canonical);
       if (entry) {
@@ -166,9 +167,9 @@ export class LibraryStore {
       this.assertRead(newPath, generation);
       const data = structuredClone(this.state!), entry = data.entries.find(e => e.id === libraryId(id));
       if (!entry)
-        throw new Error('未找到这篇论文。');
+        throw appError('未找到这篇论文。');
       if (entry.documentId !== null && entry.documentId !== documentId)
-        throw new Error('重新定位的文件内容不一致。');
+        throw appError('重新定位的文件内容不一致。');
       const canonical = normalizeLibraryPath(newPath), existing = data.entries.find(e => e.id !== id && normalizeLibraryPath(e.path) === canonical);
       if (existing)
         return { state: structuredClone(this.state!), existingId: existing.id };
@@ -190,7 +191,7 @@ export class LibraryStore {
       this.assertRead(input.path, generation);
       const data = structuredClone(this.state!), entry = data.entries.find(e => e.id === libraryId(id));
       if (!entry || normalizeLibraryPath(entry.path) !== normalizeLibraryPath(input.path))
-        throw new Error('论文条目已改变，请重新打开。');
+        throw appError('论文条目已改变，请重新打开。');
       if (entry.documentId !== null && entry.documentId !== input.documentId)
         delete entry.view;
       entry.documentId = input.documentId;
@@ -205,7 +206,7 @@ export class LibraryStore {
       return;
     const revision = this.revision, json = JSON.stringify(this.state);
     if (Buffer.byteLength(json) > MAX_BYTES)
-      throw new Error('论文库超过本机容量限制。');
+      throw appError('论文库超过本机容量限制。');
     const file = this.file();
     await mkdir(this.directory, { recursive: true });
     await writeFile(`${file}.tmp`, json, { encoding: 'utf8', mode: 0o600, flush: true });

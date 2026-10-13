@@ -1,3 +1,4 @@
+import { appError } from './i18n.js';
 import type { Annotation } from './session-types.js';
 
 export function orderedAnnotations(annotations: readonly Annotation[]): Annotation[] {
@@ -10,7 +11,7 @@ const lines = (text: string) => text.replace(/\r\n?/g, '\n');
 const literal = (text: string) => lines(text).replace(/[!-/:-@\[-`{-~]/g, '\\$&');
 
 export function renderNotesMarkdown(fileName: string, annotations: readonly Annotation[]): string {
-  if (!annotations.length) throw new Error('这篇论文还没有可导出的批注。');
+  if (!annotations.length) throw appError('这篇论文还没有可导出的批注。');
   const title = literal(fileName.replace(/\.pdf$/i, ''));
   const sections = orderedAnnotations(annotations).map((annotation, index) => {
     const pages = [...new Set(annotation.quote.pages)].sort((a, b) => a - b).join('、');
