@@ -93,6 +93,8 @@ Closing a tab keeps the paper in the library. Removing an entry or deleting a gr
 
 Follow links embedded in a PDF and choose **Outline** in the page-navigation panel to read its nested outline. Explicit jumps keep your current zoom. Use **Back** / **Forward** or `Alt+Left` / `Alt+Right` to return to saved positions and zoom levels. Each open paper keeps its own temporary navigation history; see [Navigating a paper](docs/reading-guide.md#navigate-a-paper) for its lifetime and supported destinations.
 
+Drag the right edge of the outline/page panel to adjust its width. You can also focus the divider and use the arrow keys; double-click it to reset the width. Use **Hide top toolbar** at the end of the reading toolbar for more reading space, and **Show top toolbar** in the title bar to bring it back. Both preferences are remembered across restarts.
+
 Reading, copying, highlighting, and annotation work without an AI connection.
 
 Use **Export notes** in the annotations tab to save the current paper's excerpts, page references, and personal notes as editable Markdown for Obsidian or Typora. See [Export reading notes](docs/reading-guide.md#export-reading-notes).

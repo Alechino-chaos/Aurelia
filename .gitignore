@@ -16,6 +16,7 @@ coverage/
 
 # Local design archive (may contain paper excerpts and personal screenshots)
 /designs/
+/design-qa.md
 
 # Machine configuration, credentials, and reading data
 *.local.json

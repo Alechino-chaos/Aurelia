@@ -2,7 +2,7 @@ import { uiMessage } from '../electron/i18n-renderer';
 import { useLanguage } from './i18n/LanguageProvider';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelTopClose, PanelTopOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import { PdfPage } from './components/PdfPage';
 import { loadPdf } from './pdf/engine';
@@ -35,6 +35,7 @@ function saveSetting(key: string, value: unknown) {
   try { localStorage.setItem(`paperdesk:${key}`, JSON.stringify(value)); } catch { /* Storage may be disabled. */ }
 }
 function safeWidth(value: unknown) { return typeof value === 'number' && Number.isFinite(value) ? Math.max(280, Math.min(580, value)) : 400; }
+function safeNavWidth(value: unknown) { return typeof value === 'number' && Number.isFinite(value) ? Math.max(160, Math.min(480, value)) : 240; }
 
 export type ReaderSnapshot = { view: ReadingView; search: SearchMemory; navigation: NavigationHistory; documentId: string | null };
 export type ReaderHandle = { capture: () => ReaderSnapshot; suspend: () => Promise<void> };
@@ -74,8 +75,16 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
   const activeAnnotation = annotations.find(a => a.id === activeAnnotationId);
   const [navOpen, setNavOpen] = useState(false);
   const [navTab, setNavTab] = useState<'outline' | 'pages'>('outline');
-  const maxPanelWidth = Math.min(580, Math.max(280, windowWidth - libraryWidth - (navOpen ? (windowWidth <= 1100 ? 133 : 168) : 0) - 360));
+  const [navWidth, setNavWidth] = useState(() => safeNavWidth(readSetting('navWidth', 240)));
+  const maxNavWidth = Math.min(480, Math.max(160, windowWidth - (panelOpen ? 285 : 0) - 365));
+  const effectiveNavWidth = Math.min(navWidth, maxNavWidth);
+  const maxPanelWidth = Math.min(580, Math.max(280, windowWidth - (navOpen ? effectiveNavWidth + 5 : libraryWidth) - 365));
   const effectivePanelWidth = Math.min(panelWidth, maxPanelWidth);
+  const [toolbarHidden, setToolbarHidden] = useState(() => readSetting<unknown>('toolbarHidden', false) === true);
+  const hideToolbarButton = useRef<HTMLButtonElement>(null), showToolbarButton = useRef<HTMLButtonElement>(null);
+  const toolbarFocusPending = useRef(false);
+  const toggleToolbar = () => { toolbarFocusPending.current = true; setToolbarHidden(value => !value); };
+  const navDrag = useRef<{ x: number; width: number } | null>(null);
   const [resizing, setResizing] = useState(false);
   const [autoColumns, setAutoColumns] = useState(true);
   const search = usePdfSearch(pdf, autoColumns, initialSearch);
@@ -166,6 +175,13 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
   useEffect(() => () => { generation.current++; void pending.current?.destroy(); }, []);
   useEffect(() => { setPageDraft(String(activePage)); }, [activePage]);
   useEffect(() => { saveSetting('panelWidth', panelWidth); }, [panelWidth]);
+  useEffect(() => { saveSetting('navWidth', navWidth); }, [navWidth]);
+  useEffect(() => { saveSetting('toolbarHidden', toolbarHidden); }, [toolbarHidden]);
+  useLayoutEffect(() => {
+    if (!toolbarFocusPending.current) return;
+    toolbarFocusPending.current = false;
+    (toolbarHidden ? showToolbarButton : hideToolbarButton).current?.focus({ preventScroll: true });
+  }, [toolbarHidden]);
   useEffect(() => {
     const resize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', resize);
@@ -523,8 +539,9 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
     <header className="titlebar">
       <div className="brand"><img className="brand-icon" src={`${import.meta.env.BASE_URL}branding/aurelia-32.png`} alt="" /><span>Aurelia</span></div>
       <span className="window-caption">{t("你的论文阅读工作台")}</span>
+      {toolbarHidden && <button ref={showToolbarButton} className="toolbar-restore" aria-label={t('显示顶部工具栏')} onClick={toggleToolbar}><PanelTopOpen size={15} />{t('显示顶部工具栏')}</button>}
     </header>
-    <div className="workspace-toolbar">
+    <div className="workspace-toolbar" hidden={toolbarHidden}>
       <div className="document-actions">
         <button className="icon-button" title={navOpen ? t("收起页码导航") : t("展开页码导航")} aria-label={t("切换页码导航")} onClick={() => { setNavOpen(value => !value); onPagesNavigation?.(!navOpen); }}>{navOpen ? <PanelLeftClose /> : <PanelLeftOpen />}</button>
         <button className="open-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={16} /><span>{t("打开 PDF")}</span></button>
@@ -554,17 +571,34 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
           </div>
 
         </div>
-      <div className="document-actions toolbar-settings"><button className="icon-button" title={t('设置')} aria-label={t('设置')} onClick={() => ai.openSettings()}><Settings /></button><button className={`icon-button panel-toggle ${panelOpen ? 'active' : ''}`} title={panelOpen ? t("收起右侧面板") : t("展开右侧面板")} aria-label={t("切换右侧面板")} onClick={() => setPanelOpen(value => !value)}>{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</button></div>
+      <div className="document-actions toolbar-settings"><button className="icon-button" title={t('设置')} aria-label={t('设置')} onClick={() => ai.openSettings()}><Settings /></button><button className={`icon-button panel-toggle ${panelOpen ? 'active' : ''}`} title={panelOpen ? t("收起右侧面板") : t("展开右侧面板")} aria-label={t("切换右侧面板")} onClick={() => setPanelOpen(value => !value)}>{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</button><button ref={hideToolbarButton} className="icon-button" title={t('隐藏顶部工具栏')} aria-label={t('隐藏顶部工具栏')} onClick={toggleToolbar}><PanelTopClose /></button></div>
     </div>
     <main className="workspace">
       {!navOpen && navigation}
-      <nav className="page-nav" aria-label={t("页码导航")} hidden={!navOpen}>
+      <nav className="page-nav" aria-label={t("页码导航")} hidden={!navOpen} style={{ width: effectiveNavWidth }}>
         <div className="document-nav-tabs" role="group" aria-label={t("文档导航")}><button aria-pressed={navTab === 'outline'} onClick={() => setNavTab('outline')}>{t("目录")}</button><button aria-pressed={navTab === 'pages'} onClick={() => setNavTab('pages')}>{t("页码")}</button></div>
         <div className="nav-title">{t("文档导航")} <span>{t('pageCount', { count: pdf?.numPages ?? 0 })}</span></div>
         <div className="outline-slot" hidden={navTab !== 'outline'}><DocumentOutline key={pdf?.loadingTask.docId ?? 'empty'} pdf={pdf} onLink={onNativeLink} /></div>
         {navTab === 'pages' && (pdf ? <div className="page-list">{sizes.map((_, index) => <button key={index} className={`page-link ${activePage === index + 1 ? 'current' : ''}`} onClick={() => goToPage(index + 1)} aria-current={activePage === index + 1 ? 'page' : undefined}><FileText size={16} /><span>{t('pages', { pages: index + 1 })}</span>{activePage === index + 1 && <span className="current-dot" />}</button>)}</div> : <p className="nav-empty">{t("打开 PDF 后")}<br />{t("在这里切换页面")}</p>)}
         <div className="nav-footer"><BookOpen size={14} /> {t("连续阅读")}</div>
       </nav>
+      {navOpen && <div className="resize-handle nav-resize" role="separator" aria-orientation="vertical" aria-label={t('调整文档导航宽度')} tabIndex={0}
+        aria-valuemin={160} aria-valuemax={maxNavWidth} aria-valuenow={Math.round(effectiveNavWidth)}
+        onDoubleClick={() => setNavWidth(Math.min(240, maxNavWidth))}
+        onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          setNavWidth(Math.min(maxNavWidth, safeNavWidth(event.key === 'Home' ? 160 : event.key === 'End' ? maxNavWidth : effectiveNavWidth + (event.key === 'ArrowLeft' ? -20 : 20))));
+        }}
+        onPointerDown={event => {
+          if (event.button !== 0) return;
+          event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
+          navDrag.current = { x: event.clientX, width: effectiveNavWidth }; setResizing(true);
+        }} onPointerMove={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId) && navDrag.current)
+            setNavWidth(Math.min(maxNavWidth, safeNavWidth(navDrag.current.width + event.clientX - navDrag.current.x)));
+        }} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+        onLostPointerCapture={() => { navDrag.current = null; setResizing(false); }}><GripVertical size={12} /></div>}
       <div className="reading-workspace">
         {search.open && <SearchBar search={search} page={activePage} onClose={closeSearch} />}
         {error && <div className="error-banner" role="alert"><span>{display(error)}</span><button className="icon-button small" aria-label={t("关闭错误提示")} onClick={() => setError('')}><X /></button></div>}

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.4 — 2026-10-13
+
+- Make paper-library group names larger and semibold for clearer hierarchy, while keeping paper counts visually secondary.
+
+## 0.9.3 — 2026-10-13
+
+- Resize the outline and page navigation by dragging its edge or using arrow keys; remember the preferred width and protect the reading area on smaller windows.
+- Hide the top reading toolbar to free up vertical space, with an accessible restore button in the title bar. Keep the preference across paper switches and restarts.
+
+## 0.9.2 — 2026-10-13
+
+- Restore the original Aurelia application icon on the welcome screen for consistent branding.
+
+## 0.9.1 — 2026-10-13
+
+- Redesign the first-launch language welcome with a light sage reading illustration, refined bilingual typography and clearly selected language rows.
+- Preserve explicit confirmation, keyboard selection, save retries and existing language preferences; returning users keep their saved choice.
+
 ## 0.9.0 — 2026-10-13
 
 - Choose English or Simplified Chinese once before entering the workspace, including when upgrading an existing profile. The system language only suggests a selection; explicit confirmation saves your preference.

@@ -15,3 +15,9 @@ Generation prompt:
 Final refinement prompt:
 
 > Precise production app-icon refinement. Preserve the elegant champagne gold A / open-book monogram, its silhouette, center placement, and large scale. Replace ALL background with a completely opaque, uniform, flat very dark forest green #082F28, including every corner and every gap surrounding and within the A. Full-bleed SQUARE canvas, no rounded tile needed. No transparency anywhere, no black patches, no edge shading, no vignettes, no halo, no textures in the background. Preserve the gold monogram's subtle dimensional paper fold shading. No words, no extra decorations. Result is the final elegant stately Aurelia application icon.
+
+## Welcome screen assets
+
+- `welcome-reading.png`: generated text-free sage reading illustration for the welcome panel.
+- The welcome wordmark uses the original `aurelia.png` application icon.
+- All welcome headings, language choices and controls remain editable application text; decorative assets contain no interface controls.
