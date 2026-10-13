@@ -1,15 +1,13 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import type { SearchMatch } from '../pdf/search';
-import type { SearchNavigation } from '../search/usePdfSearch';
 
 type Mark = { id: string; x: number; y: number; width: number; height: number };
-export function SearchHighlights({ matches, activeId, navigation, pageElement, textHost, scrollRoot, ready, near, scale }: {
-  matches: SearchMatch[]; activeId: string | null; navigation: SearchNavigation | null;
+export function SearchHighlights({ matches, activeId, pageElement, textHost, scrollRoot, ready, near, scale }: {
+  matches: SearchMatch[]; activeId: string | null;
   pageElement: React.RefObject<HTMLDivElement | null>; textHost: React.RefObject<HTMLDivElement | null>;
   scrollRoot: React.RefObject<HTMLDivElement | null>; ready: boolean; near: boolean; scale: number;
 }) {
   const [marks, setMarks] = useState<Mark[]>([]);
-  const located = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (!ready || !near || !matches.length) { setMarks([]); return; }
     // PDF.js updates text metrics in the parent layout effect. Measure on the next frame.
@@ -33,20 +31,9 @@ export function SearchHighlights({ matches, activeId, navigation, pageElement, t
         }
       }
       setMarks(next);
-      if (navigation && located.current !== navigation.serial) {
-        const mark = next.find(mark => mark.id === navigation.match.id);
-        if (mark) {
-          located.current = navigation.serial;
-          const view = root.getBoundingClientRect();
-          root.scrollTop += bounds.top + mark.y * bounds.height - view.top - Math.min(90, root.clientHeight / 4);
-          const left = bounds.left + mark.x * bounds.width, right = left + mark.width * bounds.width;
-          if (left < view.left + 16 || right > view.left + root.clientWidth - 16)
-            root.scrollLeft += left - view.left - 32;
-        }
-      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [matches, activeId, navigation, ready, near, scale, pageElement, textHost, scrollRoot]);
+  }, [matches, activeId, ready, near, scale, pageElement, textHost, scrollRoot]);
   return <div className="search-highlights" aria-hidden="true">{marks.map((mark, index) =>
     <span key={`${mark.id}:${index}`} className={`search-highlight${mark.id === activeId ? ' active' : ''}`} data-search-id={mark.id}
       style={{ left: `${mark.x * 100}%`, top: `${mark.y * 100}%`, width: `${mark.width * 100}%`, height: `${mark.height * 100}%` }} />)}</div>;

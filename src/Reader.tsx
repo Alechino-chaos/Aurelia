@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
-import { ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import { PdfPage } from './components/PdfPage';
 import { loadPdf } from './pdf/engine';
@@ -15,6 +16,13 @@ import { usePdfSearch, type SearchMemory } from './search/usePdfSearch';
 import { SearchBar } from './components/SearchBar';
 import { releaseDocumentText } from './pdf/documentText';
 import type { SearchMatch } from './pdf/search';
+import { useDocumentNavigation } from './navigation/useDocumentNavigation';
+import type { NavigationHistory, NavigationPoint } from './navigation/history';
+import { resolveDestination } from './navigation/destinations';
+import type { NativeLinkTarget } from './navigation/links';
+import { searchLanding } from './navigation/searchLanding';
+import { validateExternalUrl } from '../electron/external-url';
+import { DocumentOutline } from './components/DocumentOutline';
 
 const noSearchMatches: SearchMatch[] = [];
 
@@ -26,15 +34,15 @@ function saveSetting(key: string, value: unknown) {
 }
 function safeWidth(value: unknown) { return typeof value === 'number' && Number.isFinite(value) ? Math.max(280, Math.min(580, value)) : 400; }
 
-export type ReaderSnapshot = { view: ReadingView; search: SearchMemory; documentId: string | null };
+export type ReaderSnapshot = { view: ReadingView; search: SearchMemory; navigation: NavigationHistory; documentId: string | null };
 export type ReaderHandle = { capture: () => ReaderSnapshot; suspend: () => Promise<void> };
-type ReaderProps = { resource?: PdfResource; initialView?: ReadingView; initialSearch?: SearchMemory;
+type ReaderProps = { resource?: PdfResource; initialView?: ReadingView; initialSearch?: SearchMemory; initialNavigation?: NavigationHistory;
   handle?: Ref<ReaderHandle>; managed?: boolean; onOpen?: () => Promise<void>; onOpenData?: (file: OpenedFile) => Promise<void>;
   onRecent?: (id: string) => Promise<void>; onSample?: () => Promise<void>;
   onDrop?: (files: File[]) => Promise<void>; onView?: (snapshot: ReaderSnapshot) => void; libraryWidth?: number;
   navigation?: React.ReactNode; onPagesNavigation?: (open: boolean) => void };
 
-export default function Reader({ resource, initialView, initialSearch, handle, managed, onOpen, onOpenData, onRecent, onSample, onDrop, onView, libraryWidth = 0, navigation, onPagesNavigation }: ReaderProps = {}) {
+export default function Reader({ resource, initialView, initialSearch, initialNavigation, handle, managed, onOpen, onOpenData, onRecent, onSample, onDrop, onView, libraryWidth = 0, navigation, onPagesNavigation }: ReaderProps = {}) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(resource?.pdf ?? null);
   const [fileName, setFileName] = useState(resource?.name ?? '');
   const [documentKey, setDocumentKey] = useState<string | null>(resource?.documentId ?? null);
@@ -46,6 +54,7 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
   const [toast, setToast] = useState('');
   const [activePage, setActivePage] = useState(initialView?.page ?? 1);
   const [pageDraft, setPageDraft] = useState(String(initialView?.page ?? 1));
+  const pageDraftDirty = useRef(false);
   const [zoom, setZoom] = useState<number | 'fit'>(initialView?.zoom ?? 'fit');
   const [readerWidth, setReaderWidth] = useState(850);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -61,6 +70,7 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
   const annotations = ai.session?.annotations ?? [];
   const activeAnnotation = annotations.find(a => a.id === activeAnnotationId);
   const [navOpen, setNavOpen] = useState(false);
+  const [navTab, setNavTab] = useState<'outline' | 'pages'>('outline');
   const maxPanelWidth = Math.min(580, Math.max(280, windowWidth - libraryWidth - (navOpen ? (windowWidth <= 1100 ? 133 : 168) : 0) - 360));
   const effectivePanelWidth = Math.min(panelWidth, maxPanelWidth);
   const [resizing, setResizing] = useState(false);
@@ -173,12 +183,46 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
     const rect = page.getBoundingClientRect();
     anchor.current = { number: Number(page.dataset.pageNumber), y: (rootRect.top - rect.top) / scaleRef.current, x: root.scrollLeft / scaleRef.current };
   }, []);
+  const zoomRef = useRef(zoom); zoomRef.current = zoom;
+  const navigationController = useDocumentNavigation(pdf, {
+    capture: (): NavigationPoint => {
+      const saved = initialAnchor.current;
+      if (!readyView.current && saved) return { page: saved.page, x: saved.anchorX, y: saved.anchorY, zoom: zoomRef.current };
+      const root = reader.current, view = root?.getBoundingClientRect();
+      const page = root && view ? Array.from(root.querySelectorAll<HTMLElement>('.pdf-page')).find(page => page.getBoundingClientRect().bottom > view.top + 24) : null;
+      const bounds = page?.getBoundingClientRect();
+      return { page: Number(page?.dataset.pageNumber ?? activePage), x: bounds && view ? (view.left - bounds.left) / bounds.width : 0,
+        y: bounds && view ? (view.top - bounds.top) / bounds.height : 0, zoom: zoomRef.current };
+    },
+    land: async (target, current, restoreZoom) => {
+      if (!pdf || !reader.current || !current() || !Number.isInteger(target.page) || target.page < 1 || target.page > pdf.numPages
+        || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return false;
+      const root = reader.current;
+      // Ordinary page/destination moves use the current layout immediately. Only
+      // panel changes and saved-zoom restoration need a deferred geometry pass.
+      if (restoreZoom || target.waitForLayout)
+        await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+      if (!current() || reader.current !== root) return false;
+      const element = root.querySelector<HTMLElement>(`[data-page-number="${target.page}"]`);
+      if (!element) return false;
+      initialAnchor.current = null; readyView.current = true; anchor.current = null;
+      if (restoreZoom && zoomRef.current !== target.zoom) {
+        // Commit zoom and its measured anchor together, with no asynchronous gap.
+        flushSync(() => setZoom(target.zoom));
+      }
+      const bounds = element.getBoundingClientRect(), view = root.getBoundingClientRect();
+      root.scrollTop += bounds.top - view.top + target.y * bounds.height - (target.marginY ?? 0);
+      root.scrollLeft += bounds.left - view.left + target.x * bounds.width - (target.marginX ?? 0);
+      setActivePage(target.page); setPageDraft(String(target.page)); setShowSelectionTools(false);
+      return true;
+    }, notify,
+  }, initialNavigation);
   const captureView = (): ReaderSnapshot => {
     const searchMemory = { open: search.open, query: search.query, caseSensitive: search.caseSensitive, repairHyphens: search.repairHyphens };
     // A switch/close can arrive during the first layout frames. The temporary
     // top-of-document DOM is not a new reading position until restoration finishes.
     if (!readyView.current && initialAnchor.current) return { documentId: documentKey,
-      view: { ...initialAnchor.current, page: Math.max(1, Math.min(pdf?.numPages ?? initialAnchor.current.page, initialAnchor.current.page)), zoom, panelOpen, panelTab }, search: searchMemory };
+      view: { ...initialAnchor.current, page: Math.max(1, Math.min(pdf?.numPages ?? initialAnchor.current.page, initialAnchor.current.page)), zoom, panelOpen, panelTab }, search: searchMemory, navigation: navigationController.history };
     const root = reader.current, bounds = root?.getBoundingClientRect();
     const page = root && bounds ? Array.from(root.querySelectorAll<HTMLElement>('.pdf-page')).find(page => page.getBoundingClientRect().bottom > bounds.top + 24) : null;
     const rect = page?.getBoundingClientRect();
@@ -187,11 +231,11 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
         anchorY: bounds && rect ? Math.max(0, Math.min(1, (bounds.top - rect.top) / rect.height)) : 0,
         anchorX: root && rect ? Math.max(0, Math.min(1, root.scrollLeft / rect.width)) : 0,
         zoom, panelOpen, panelTab },
-      search: searchMemory };
+      search: searchMemory, navigation: navigationController.history };
   };
   const currentCapture = useRef(captureView); currentCapture.current = captureView;
-  useImperativeHandle(handle, () => ({ capture: () => currentCapture.current(), suspend: ai.prepareToLeave }));
-  useEffect(() => { if (readyView.current && pdf) onView?.(currentCapture.current()); }, [pdf, zoom, panelOpen, panelTab, activePage, search.open, search.query, search.caseSensitive, search.repairHyphens, onView]);
+  useImperativeHandle(handle, () => ({ capture: () => { navigationController.cancel(); return currentCapture.current(); }, suspend: ai.prepareToLeave }));
+  useEffect(() => { if (readyView.current && pdf) onView?.(currentCapture.current()); }, [pdf, zoom, panelOpen, panelTab, activePage, search.open, search.query, search.caseSensitive, search.repairHyphens, onView, navigationController.history]);
   useLayoutEffect(() => {
     const saved = initialAnchor.current, root = reader.current;
     if (!saved || !root || !pdf) return;
@@ -226,38 +270,56 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
   }, [scale]);
 
   const goToPage = useCallback((number: number) => {
-    if (!pdf || !reader.current) return;
+    if (!pdf || !reader.current || !Number.isFinite(number)) return;
     const target = Math.max(1, Math.min(pdf.numPages, Math.round(number) || 1));
-    const element = reader.current.querySelector<HTMLElement>(`[data-page-number="${target}"]`);
-    if (element) {
-      reader.current.scrollTop += element.getBoundingClientRect().top - reader.current.getBoundingClientRect().top - 24;
-      setActivePage(target);
-      setPageDraft(String(target));
-    }
-  }, [pdf]);
+    void navigationController.jump((_signal, from) => ({ page: target, x: from.x, y: 0, zoom: from.zoom, marginY: 24 }));
+  }, [pdf, navigationController]);
+  const onNativeLink = useCallback((target: NativeLinkTarget) => {
+    if (!pdf) return;
+    if (target.kind === 'destination') {
+      void navigationController.jump(async (_signal, from) => {
+        const resolved = await resolveDestination(pdf, target.destination);
+        return { page: resolved.page, x: resolved.x ?? from.x, y: resolved.y ?? from.y, zoom: from.zoom };
+      });
+    } else if (target.kind === 'action') {
+      if (target.action === 'GoBack' || target.action === 'GoForward') void navigationController.step(target.action === 'GoBack' ? 'back' : 'forward');
+      else {
+        void navigationController.jump((_signal, from) => ({ ...from, y: 0, marginY: 24,
+          page: target.action === 'FirstPage' ? 1 : target.action === 'LastPage' ? pdf.numPages
+            : Math.max(1, Math.min(pdf.numPages, from.page + (target.action === 'NextPage' ? 1 : -1))) }));
+      }
+    } else if (target.kind === 'external') {
+      try {
+        const url = validateExternalUrl(target.url);
+        if (window.paperdesk) void window.paperdesk.openExternalUrl(url).catch(() => notify('无法打开网页链接'));
+        else window.open(url, '_blank', 'noopener,noreferrer');
+      } catch { notify('此 PDF 链接暂不支持'); }
+    } else notify('此 PDF 链接暂不支持');
+  }, [pdf, navigationController, notify]);
   useEffect(() => {
-    if (search.navigation) goToPage(search.navigation.match.page);
-  }, [search.navigation, goToPage]);
+    const request = search.navigation, root = reader.current;
+    if (!request || !root) return;
+    void navigationController.jump(async (signal, from) => ({ ...await searchLanding(root, request.match, signal), zoom: from.zoom,
+      marginY: Math.min(90, root.clientHeight / 4), marginX: 32 }));
+  }, [search.navigation, navigationController]);
   const closeSearch = useCallback(() => {
     search.close(); reader.current?.focus({ preventScroll: true });
   }, [search.close]);
   const locateAnnotation = (id: string) => {
     const entry = annotations.find(a => a.id === id);
     if (!entry || !reader.current) return;
-    selectAnnotation(id);
-    // After opening the panel, allow its width/fit-zoom update to settle first.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const root = reader.current, region = entry.regions[0];
-      const page = root?.querySelector<HTMLElement>(`[data-page-number="${region.page}"]`);
-      if (!root || !page) return;
-      const bounds = page.getBoundingClientRect(), view = root.getBoundingClientRect();
-      root.scrollTop += bounds.top - view.top + region.y * bounds.height - 90;
-      root.scrollLeft += bounds.left - view.left + region.x * bounds.width - 48;
-      setActivePage(region.page); setPageDraft(String(region.page));
-    }));
+    const region = entry.regions[0]; if (!region) return;
+    void navigationController.jump((_signal, from) => {
+      selectAnnotation(id);
+      return { page: region.page, x: region.x, y: region.y, zoom: from.zoom, marginY: 90, marginX: 48, waitForLayout: true };
+    });
   };
   useEffect(() => {
-    if (pdf && restorePage.current) { goToPage(restorePage.current); restorePage.current = null; }
+    if (pdf && restorePage.current) {
+      const root = reader.current, element = root?.querySelector<HTMLElement>(`[data-page-number="${restorePage.current}"]`);
+      if (root && element) root.scrollTop += element.getBoundingClientRect().top - root.getBoundingClientRect().top - 24;
+      restorePage.current = null;
+    }
   }, [pdf, sizes, goToPage]);
 
   const openData = useCallback(async (file: OpenedFile) => {
@@ -347,6 +409,9 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
       }
       if (event.key === 'Escape' && search.open) { event.preventDefault(); closeSearch(); return; }
       const input = event.target instanceof HTMLElement && event.target.closest('input, textarea, [contenteditable="true"]');
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !input && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault(); void navigationController.step(event.key === 'ArrowLeft' ? 'back' : 'forward'); return;
+      }
       if (event.key === 'Escape') { setShowSelectionTools(false); window.getSelection()?.removeAllRanges(); }
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 'o' && !window.paperdesk) { event.preventDefault(); void openFile(); }
@@ -369,7 +434,7 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
     window.addEventListener('keydown', keydown);
     document.addEventListener('copy', copy);
     return () => { window.removeEventListener('keydown', keydown); document.removeEventListener('copy', copy); };
-  }, [openFile, changeZoom, copyText, repairHyphens, notify, pdf, loading, search.show, search.open, closeSearch]);
+  }, [openFile, changeZoom, copyText, repairHyphens, notify, pdf, loading, search.show, search.open, closeSearch, navigationController]);
 
   useEffect(() => {
     let timeout = 0;
@@ -451,9 +516,13 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
         <div className="document-label" title={fileName || '尚未打开文档'}>{pdf && <FileText size={15} />}<span>{fileName || '阅读工作区'}</span></div>
       </div>
         <div className="reading-toolbar">
+          <div className="history-controls">
+            <button className="icon-button small" title="后退 (Alt+←)" aria-label="后退" disabled={!pdf || !navigationController.canBack} onClick={() => void navigationController.step('back')}><ArrowLeft /></button>
+            <button className="icon-button small" title="前进 (Alt+→)" aria-label="前进" disabled={!pdf || !navigationController.canForward} onClick={() => void navigationController.step('forward')}><ArrowRight /></button>
+          </div>
           <div className="page-controls">
             <button className="icon-button small" title="上一页" aria-label="上一页" disabled={!pdf || activePage <= 1} onClick={() => goToPage(activePage - 1)}><ChevronLeft /></button>
-            <input aria-label="页码" className="page-input" inputMode="numeric" value={pdf ? pageDraft : '—'} disabled={!pdf} onChange={event => setPageDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { goToPage(Number(pageDraft)); event.currentTarget.blur(); } }} onBlur={() => { if (pdf) goToPage(Number(pageDraft)); }} />
+            <input aria-label="页码" className="page-input" inputMode="numeric" value={pdf ? pageDraft : '—'} disabled={!pdf} onChange={event => { pageDraftDirty.current = true; setPageDraft(event.target.value); }} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { pageDraftDirty.current = true; event.currentTarget.blur(); } }} onBlur={() => { if (pdf && pageDraftDirty.current) { pageDraftDirty.current = false; goToPage(Number(pageDraft)); } }} />
             <span className="page-count">/ {pdf?.numPages ?? '—'}</span>
             <button className="icon-button small" title="下一页" aria-label="下一页" disabled={!pdf || activePage >= pdf.numPages} onClick={() => goToPage(activePage + 1)}><ChevronRight /></button>
           </div>
@@ -472,18 +541,20 @@ export default function Reader({ resource, initialView, initialSearch, handle, m
     </div>
     <main className="workspace">
       {!navOpen && navigation}
-      {navOpen && <nav className="page-nav" aria-label="页码导航">
-        <div className="nav-title">文档页码 <span>{pdf?.numPages ?? 0}</span></div>
-        {pdf ? <div className="page-list">{sizes.map((_, index) => <button key={index} className={`page-link ${activePage === index + 1 ? 'current' : ''}`} onClick={() => goToPage(index + 1)} aria-current={activePage === index + 1 ? 'page' : undefined}><FileText size={16} /><span>第 {index + 1} 页</span>{activePage === index + 1 && <span className="current-dot" />}</button>)}</div> : <p className="nav-empty">打开 PDF 后<br />在这里切换页面</p>}
+      <nav className="page-nav" aria-label="页码导航" hidden={!navOpen}>
+        <div className="document-nav-tabs" role="group" aria-label="文档导航"><button aria-pressed={navTab === 'outline'} onClick={() => setNavTab('outline')}>目录</button><button aria-pressed={navTab === 'pages'} onClick={() => setNavTab('pages')}>页码</button></div>
+        <div className="nav-title">文档导航 <span>{pdf?.numPages ?? 0} 页</span></div>
+        <div className="outline-slot" hidden={navTab !== 'outline'}><DocumentOutline key={pdf?.loadingTask.docId ?? 'empty'} pdf={pdf} onLink={onNativeLink} /></div>
+        {navTab === 'pages' && (pdf ? <div className="page-list">{sizes.map((_, index) => <button key={index} className={`page-link ${activePage === index + 1 ? 'current' : ''}`} onClick={() => goToPage(index + 1)} aria-current={activePage === index + 1 ? 'page' : undefined}><FileText size={16} /><span>第 {index + 1} 页</span>{activePage === index + 1 && <span className="current-dot" />}</button>)}</div> : <p className="nav-empty">打开 PDF 后<br />在这里切换页面</p>)}
         <div className="nav-footer"><BookOpen size={14} /> 连续阅读</div>
-      </nav>}
+      </nav>
       <div className="reading-workspace">
         {search.open && <SearchBar search={search} page={activePage} onClose={closeSearch} />}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button small" aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div>}
         <div className={`reader ${!pdf ? 'reader-empty' : ''}`} ref={reader} onScroll={onScroll} tabIndex={0} aria-label="PDF 连续阅读区">
           {pdf ? <div className="pages" key={pdf.loadingTask.docId} data-document-id={pdf.loadingTask.docId}>{sizes.map((size, index) => <PdfPage key={index} pdf={pdf} number={index + 1} size={size} scale={scale} dpr={pixelRatio} autoColumns={autoColumns} scrollRoot={reader} annotations={annotations} activeAnnotationId={activeAnnotationId} onAnnotationSelect={selectAnnotation}
             searchMatches={search.byPage.get(index + 1) ?? noSearchMatches} searchActiveId={search.activeId}
-            searchNavigation={search.navigation?.match.page === index + 1 ? search.navigation : null} />)}<div className="document-end">— 已到文档末尾 —</div></div> : <div className="welcome">
+            searchNavigation={search.navigation?.match.page === index + 1 ? search.navigation : null} onNativeLink={onNativeLink} />)}<div className="document-end">— 已到文档末尾 —</div></div> : <div className="welcome">
             <img className="welcome-logo" src={import.meta.env.BASE_URL + 'branding/aurelia.png'} alt="" />
             <h1>打开论文</h1>
             <p>打开或拖入 PDF，开始阅读、选取和翻译。</p>

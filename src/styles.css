@@ -74,6 +74,26 @@ svg { flex-shrink: 0; stroke-width: 1.7; }
 .current-dot { width: 4px; height: 4px; background: #5c7e50; border-radius: 50%; margin-left: auto; }
 .nav-empty { color: var(--muted); font-size: var(--text-meta); line-height: 1.8; text-align: center; margin-top: 30px; flex: 1; }
 .nav-footer { display: flex; gap: 7px; color: var(--muted); font-size: var(--text-meta); padding: 16px; border-top: 1px solid var(--line); }
+.history-controls { display: flex; align-items: center; gap: 3px; }
+.native-link-layer { position: absolute; inset: 0; pointer-events: none; }
+.native-pdf-link { position: absolute; pointer-events: none; padding: 0; border-radius: 2px; }
+.native-pdf-link.hovered, .native-pdf-link:focus-visible { box-shadow: inset 0 -1px #47745d; background: #729d8020; }
+.native-pdf-link:focus-visible { outline: 2px solid #47745d; outline-offset: -1px; }
+.native-link-retry { position: absolute; right: 8px; bottom: 8px; pointer-events: auto; font-size: 12px; background: #f6f8ef; padding: 6px 10px; border-radius: 4px; }
+.document-nav-tabs { display: flex; padding: 10px 8px 0; gap: 4px; }
+.document-nav-tabs button { flex: 1; padding: 7px 4px; border-radius: 4px; color: var(--muted); font-size: 13px; }
+.document-nav-tabs button[aria-pressed="true"] { background: #e8ede1; color: var(--ink); }
+.outline-slot { flex: 1; min-height: 0; overflow: auto; }
+.outline-slot[hidden] { display: none; }
+.page-nav[hidden] { display: none; }
+.document-outline ul { list-style: none; margin: 0; padding: 0; }
+.outline-row { display: flex; align-items: flex-start; border-radius: 4px; margin: 0 5px 3px; }
+.outline-row.current { background: #e8ede1; }
+.outline-expand, .outline-indent { flex-shrink: 0; width: 19px; height: 33px; display: flex; align-items: center; justify-content: center; }
+.outline-entry { min-width: 0; flex: 1; text-align: left; padding: 8px 5px 8px 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.outline-row:hover { background: #eef1e9; }
+.document-outline .nav-empty button { padding: 5px 8px; text-decoration: underline; }
+@media (max-width: 1100px) { .workspace-toolbar .reading-toolbar { gap: 9px; } .workspace-toolbar { column-gap: 10px; } }
 .resize-handle::after { content: ''; position: absolute; inset: 0 -3px; }
 .resize-handle > svg { position: absolute; top: 50%; left: -4px; color: var(--muted); opacity: 0; }
 .resize-handle:hover, .is-resizing .resize-handle { background: #74906a; }

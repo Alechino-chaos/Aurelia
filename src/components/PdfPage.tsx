@@ -9,15 +9,18 @@ import type { Annotation } from '../../electron/session-types';
 import { SearchHighlights } from './SearchHighlights';
 import type { SearchMatch } from '../pdf/search';
 import type { SearchNavigation } from '../search/usePdfSearch';
+import type { NativeLinkTarget } from '../navigation/links';
+import { PdfLinkLayer } from './PdfLinkLayer';
 
 type Props = {
   pdf: PDFDocumentProxy; number: number; size: PageSize; scale: number; dpr: number;
   autoColumns: boolean; scrollRoot: React.RefObject<HTMLDivElement | null>;
   annotations: Annotation[]; activeAnnotationId: string | null; onAnnotationSelect: (id: string) => void;
   searchMatches: SearchMatch[]; searchActiveId: string | null; searchNavigation: SearchNavigation | null;
+  onNativeLink: (target: NativeLinkTarget) => void;
 };
 
-export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot, annotations, activeAnnotationId, onAnnotationSelect, searchMatches, searchActiveId, searchNavigation }: Props) {
+export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot, annotations, activeAnnotationId, onAnnotationSelect, searchMatches, searchActiveId, searchNavigation, onNativeLink }: Props) {
   const pageElement = useRef<HTMLDivElement>(null);
   const textHost = useRef<HTMLDivElement>(null);
   const activeText = useRef<{ layer: TextLayer; container: HTMLDivElement; page: PDFPageProxy } | null>(null);
@@ -30,6 +33,7 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
   const [columns, setColumns] = useState(1);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  useEffect(() => { if (searchNavigation) setVisited(true); }, [searchNavigation]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(entries => {
@@ -94,9 +98,10 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
       style={{ width: size.width * scale, height: size.height * scale, '--scale-factor': scale, '--total-scale-factor': scale, '--user-unit': 1 } as CSSProperties}>
       <PdfCanvas pdf={pdf} number={number} size={size} scale={scale} dpr={dpr} near={near} retry={retry} scrollRoot={scrollRoot} pageElement={pageElement} onError={setError} />
       <AnnotationLayer annotations={annotations} page={number} size={size} activeId={activeAnnotationId} onSelect={onAnnotationSelect} />
-      <SearchHighlights matches={searchMatches} activeId={searchActiveId} navigation={searchNavigation}
+      <SearchHighlights matches={searchMatches} activeId={searchActiveId}
         pageElement={pageElement} textHost={textHost} scrollRoot={scrollRoot} ready={textReady} near={near} scale={scale} />
       <div ref={textHost} className="text-host" />
+      <PdfLinkLayer pdf={pdf} number={number} visited={visited} pageElement={pageElement} onLink={onNativeLink} />
       {error && <div className="page-error">{error}<button onClick={() => { setError(''); setRetry(value => value + 1); }}>重试</button></div>}
       {empty && textReady && <div className="scan-notice">此页没有可选文本；扫描件的 OCR 将在后续版本支持。</div>}
     </div>

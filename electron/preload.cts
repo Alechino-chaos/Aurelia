@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('paperdesk', {
     };
   },
   writeClipboard: (text: string) => ipcRenderer.invoke('clipboard:write', text),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('navigation:open-external', url),
   getAiSettings: () => ipcRenderer.invoke('ai:settings'),
   saveAiSettings: (settings: AiSettingsInput) => ipcRenderer.invoke('ai:save-settings', settings),
   startAi: (request: AiRequest, documentId?: string) => ipcRenderer.invoke('ai:start', request, documentId),

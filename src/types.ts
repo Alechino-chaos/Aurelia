@@ -31,6 +31,7 @@ declare global {
       revealLibraryPaper(id: string): Promise<void>;
       onBeforeClose(callback: () => Promise<void>): () => void;
       writeClipboard(text: string): Promise<void>;
+      openExternalUrl(url: string): Promise<void>;
       getAiSettings(): Promise<AiSettings>;
       saveAiSettings(settings: AiSettingsInput): Promise<AiSettings>;
       startAi(request: AiRequest, documentId?: string): Promise<void>;

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
+import { validateExternalUrl } from './external-url.js';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -189,6 +190,7 @@ handle('clipboard:write', (value: unknown) => {
   if (typeof value !== 'string' || value.length > 10_000_000) throw new Error('无效的复制内容。');
   clipboard.writeText(value);
 });
+handle('navigation:open-external', (value: unknown) => shell.openExternal(validateExternalUrl(value)));
 handle('ai:settings', getAiSettings);
 handle('ai:save-settings', saveAiSettings);
 handle('ai:cancel', cancelAi);
