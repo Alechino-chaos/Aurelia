@@ -1,9 +1,17 @@
-import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const host = vi.hoisted(() => ({ directory: '', locale: 'en-US', callbacks: new Map<string, (...args: any[]) => any>(), windows: [] as any[], menus: [] as any[] }));
+const failure = vi.hoisted(() => ({ rename: false }));
+vi.mock('node:fs/promises', async importOriginal => {
+  const filesystem = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...filesystem, rename: async (...args: Parameters<typeof filesystem.rename>) => {
+    if (failure.rename && String(args[1]).endsWith('app-settings.json')) throw Object.assign(new Error('Rename denied'), { code: 'EACCES' });
+    return filesystem.rename(...args);
+  } };
+});
 vi.mock('electron', () => ({
   app: { isPackaged: true, setName() {}, commandLine: { hasSwitch: () => true }, getPath: () => host.directory,
     setPath() {}, setAppUserModelId() {}, requestSingleInstanceLock: () => true, on() {}, quit() {},
@@ -37,7 +45,7 @@ beforeEach(async () => {
   await import('../electron/main');
   await vi.waitFor(() => expect(host.windows).toHaveLength(1));
 });
-afterEach(async () => { await rm(host.directory, { recursive: true, force: true }); });
+afterEach(async () => { failure.rename = false; await rm(host.directory, { recursive: true, force: true }); });
 
 describe('trusted desktop language bridge', () => {
   it('creates a recovery window when preference reading fails and supports load retry', async () => {
@@ -72,11 +80,12 @@ describe('trusted desktop language bridge', () => {
     const count = host.menus.length;
     await expect(save(sender(), { locale: 'fr' })).rejects.toThrow();
     expect(host.menus).toHaveLength(count);
-    await mkdir(path.join(host.directory, 'app-settings.json.tmp'));
+    failure.rename = true;
     await expect(save(sender(), { locale: 'zh-CN' })).rejects.toThrow('[[aurelia-ui]]');
     expect(host.menus).toHaveLength(count);
     expect((await get(sender())).locale).toBeNull();
-    await rm(path.join(host.directory, 'app-settings.json.tmp'), { recursive: true });
+    expect(await readdir(host.directory)).toEqual([]);
+    failure.rename = false;
     expect((await save(sender(), { locale: 'zh-CN' })).locale).toBe('zh-CN');
     expect(JSON.parse(await readFile(path.join(host.directory, 'app-settings.json'), 'utf8')).locale).toBe('zh-CN');
     expect(host.menus.at(-1)[0].label).toBe('文件');

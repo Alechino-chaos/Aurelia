@@ -54,7 +54,7 @@ export class AppSettingsStore {
     return this.serialize(async () => {
       // Re-read before every write, protecting newly inaccessible/modified evidence.
       const disk = await this.read();
-      const file = this.file(), temporary = `${file}.tmp`;
+      const file = this.file(), temporary = `${file}.tmp-${randomUUID()}`;
       let ownsTemporary = false;
       try {
         await mkdir(this.directory, { recursive: true });

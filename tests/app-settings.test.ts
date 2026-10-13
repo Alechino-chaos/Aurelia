@@ -1,13 +1,31 @@
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppSettingsStore } from '../electron/app-settings';
+
+const failure = vi.hoisted(() => ({ rename: false }));
+vi.mock('node:fs/promises', async importOriginal => {
+  const filesystem = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...filesystem, rename: async (...args: Parameters<typeof filesystem.rename>) => {
+    if (failure.rename && String(args[1]).endsWith('app-settings.json')) throw Object.assign(new Error('Rename denied'), { code: 'EACCES' });
+    return filesystem.rename(...args);
+  } };
+});
 
 const directories: string[] = [];
 async function profile() { const dir = await mkdtemp(path.join(os.tmpdir(), 'aurelia-settings-')); directories.push(dir); return dir; }
-afterEach(async () => { await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+afterEach(async () => { failure.rename = false; await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 describe('separate desktop language preference', () => {
+  it('preserves temporary evidence left by an interrupted save and confirms a new choice', async () => {
+    const dir = await profile(), leftover = path.join(dir, 'app-settings.json.tmp');
+    await writeFile(leftover, '{"locale":"zh-CN"');
+    const store = new AppSettingsStore(dir, 'en');
+    expect((await store.save({ locale: 'en' })).locale).toBe('en');
+    expect(await readFile(leftover, 'utf8')).toBe('{"locale":"zh-CN"');
+    expect((await new AppSettingsStore(dir, 'zh-CN').load()).locale).toBe('en');
+    expect((await readdir(dir)).sort()).toEqual(['app-settings.json', 'app-settings.json.tmp']);
+  });
   it('leaves a missing preference unconfirmed without creating files', async () => {
     const dir = await profile();
     expect(await new AppSettingsStore(dir, 'zh-TW').load()).toEqual({ locale: null, suggestedLocale: 'zh-CN' });
@@ -55,13 +73,15 @@ describe('separate desktop language preference', () => {
   it('preserves memory and the previous disk choice on failed save then supports retry', async () => {
     const dir = await profile(), store = new AppSettingsStore(dir, 'en');
     await store.save({ locale: 'zh-CN' });
-    // A directory occupying the fixed temporary path reproduces a real write failure.
-    await mkdir(path.join(dir, 'app-settings.json.tmp'));
+    // Fail after the actual temporary write/fsync so cleanup is exercised too.
+    failure.rename = true;
     await expect(store.save({ locale: 'en' })).rejects.toThrow();
     expect((await store.get()).locale).toBe('zh-CN');
     expect(JSON.parse(await readFile(path.join(dir, 'app-settings.json'), 'utf8')).locale).toBe('zh-CN');
-    await rm(path.join(dir, 'app-settings.json.tmp'), { recursive: true });
+    expect(await readdir(dir)).toEqual(['app-settings.json']);
+    failure.rename = false;
     expect((await store.save({ locale: 'en' })).locale).toBe('en');
+    expect(await readdir(dir)).toEqual(['app-settings.json']);
   });
   it('serializes concurrent writes and publishes each durable result in invocation order', async () => {
     const dir = await profile(), store = new AppSettingsStore(dir, 'en');
