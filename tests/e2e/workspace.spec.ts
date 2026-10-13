@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { copyFile, mkdir, readFile, rename, writeFile, rmdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +13,7 @@ async function launch() {
   const packaged = process.env.AURELIA_TEST_EXECUTABLE;
   app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
     args: [...(packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')]), '--force-device-scale-factor=1'], cwd: root, env });
-  page = await app.firstWindow(); page.on('pageerror', error => errors.push(error.message));
+  page = await app.firstWindow(); await establishChinese(page); page.on('pageerror', error => errors.push(error.message));
   await page.waitForLoadState('domcontentloaded');
 }
 async function pick(files: string[]) {
@@ -115,7 +116,7 @@ test.describe('paper library workspace', () => {
     await expect.poll(() => page.locator('.app').evaluate(el => el.getBoundingClientRect().width)).toBe(960);
     expect((await page.locator('.reader').boundingBox())!.width).toBeGreaterThan(320);
     await expect(page.locator('.pdf-page canvas').first()).toBeVisible();
-    for (const name of ['打开 PDF', 'AI 服务设置', '切换右侧面板']) { const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!; expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(960); }
+    for (const name of ['打开 PDF', '设置', '切换右侧面板']) { const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!; expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(960); }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(960);
     await mkdir(path.join(root, 'test-results/screenshots'), { recursive: true }); await page.screenshot({ path: 'test-results/screenshots/workspace-sidebar.png' });
     await page.getByRole('button', { name: '标签模式' }).click(); await page.screenshot({ path: 'test-results/screenshots/workspace-tabs.png' });

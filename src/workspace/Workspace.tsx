@@ -1,3 +1,6 @@
+import { uiMessage } from '../../electron/i18n-renderer';
+import { translateBackendMessage } from '../../electron/i18n';
+import { useLanguage } from '../i18n/LanguageProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import { BookOpen, FolderTree, GripVertical, LoaderCircle, PanelsTopLeft, X } from 'lucide-react';
@@ -14,6 +17,7 @@ const message = (reason: unknown) => (reason instanceof Error ? reason.message :
 const defaultView: ReadingView = { page: 1, anchorY: 0, anchorX: 0, zoom: 'fit', panelOpen: true, panelTab: 'selection' };
 type Current = { id: string; resource: PdfResource; view: ReadingView; epoch: number };
 export function Workspace() {
+  const { t, display, locale } = useLanguage();
   const bridge = window.paperdesk!;
   const [library, setLibrary] = useState<LibraryState | null>(null), state = useRef<LibraryState | null>(null);
   const [fatal, setFatal] = useState(''), [notice, setNotice] = useState(''), [loading, setLoading] = useState(false), [current, setCurrent] = useState<Current | null>(null);
@@ -37,7 +41,7 @@ export function Workspace() {
       // A rejected write can retain a dirty authoritative mutation. Read it before the next queued capture/action.
       try { const next = await bridge.getLibrary(); publish(next); reconcileOwnership(next); }
       catch { /* Keep the original actionable failure if authoritative metadata is temporarily unavailable. */ }
-      if (live.current) setNotice(`论文库操作或保存失败：${message(reason)}`); throw reason;
+      if (live.current) setNotice(uiMessage('libraryFailure', { detail: message(reason) })); throw reason;
     }
   }), [bridge, publish]);
   const change = (operation: LibraryAction) => { void action(operation).catch(() => {}); };
@@ -85,7 +89,7 @@ export function Workspace() {
     const owner = rendered.current;
     if (!owner || owner.id !== current?.id || owner.epoch !== current?.epoch || owner.resource.documentId !== snapshot.documentId) return;
     snapshots.current.set(owner.id, snapshot); searches.current.set(owner.id, snapshot.search); clearTimeout(viewTimer.current);
-    viewTimer.current = window.setTimeout(() => { void persist(owner.id, snapshot).catch(reason => { if (live.current) setNotice(`阅读位置保存失败：${message(reason)}`); }); }, 200);
+    viewTimer.current = window.setTimeout(() => { void persist(owner.id, snapshot).catch(reason => { if (live.current) setNotice(uiMessage('viewFailure', { detail: message(reason) })); }); }, 200);
   }, [persist, current?.id, current?.epoch]);
   function cancelPending() { const task = pending.current; pending.current = null; if (task) void task.destroy().catch(() => {}); passwordCallback.current = null; setPasswordPrompt(''); }
   async function load(id: string, ticket: number, opened?: OpenedFile) {
@@ -129,7 +133,7 @@ export function Workspace() {
         view = { ...defaultView, page: Math.max(1, Math.min(resource.pdf.numPages, page)) };
       } else view = { ...view, page: Math.max(1, Math.min(resource.pdf.numPages, view.page)) };
       displayCurrent({ id, resource, view, epoch: ticket }); window.document.title = `${file.name} — Aurelia`;
-    } catch (reason) { if (ticket === generation.current && live.current) { setErrors(old => ({ ...old, [id]: `无法打开论文：${message(reason)}` })); cancelPending(); } }
+    } catch (reason) { if (ticket === generation.current && live.current) { setErrors(old => ({ ...old, [id]: uiMessage('paperFailure', { detail: message(reason) }) })); cancelPending(); } }
     finally { if (ticket === generation.current && live.current) { setLoading(false); setPasswordPrompt(''); } }
   }
   async function activate(id: string, opened?: OpenedFile) {
@@ -138,7 +142,7 @@ export function Workspace() {
       await capture(); if (ticket !== generation.current) return;
       await action(() => ticket === generation.current ? { type: state.current?.openIds.includes(id) ? 'tab-activate' : 'tab-open', id } : null); if (ticket !== generation.current) return;
       displayCurrent(null); cache.current.activate(id); await load(id, ticket, opened);
-    } catch (reason) { if (ticket === generation.current) setNotice(`无法切换论文：${message(reason)}`); }
+    } catch (reason) { if (ticket === generation.current) setNotice(uiMessage('switchFailure', { detail: message(reason) })); }
   }
   async function close(id: string, remove = false) {
     const ownsSelection = selection.current === id || selection.current === null && state.current?.activeId === id;
@@ -176,17 +180,17 @@ export function Workspace() {
         searches.current.delete(id); snapshots.current.delete(id); cache.current.delete(id);
       }
     } catch (reason) {
-      if (live.current) setNotice(`无法${remove ? '移出' : '关闭'}论文，记录尚未保存：${message(reason)}`);
+      if (live.current) setNotice(uiMessage(remove ? 'removeFailure' : 'closeFailure', { detail: message(reason) }));
       if (ownsSelection && ticket === generation.current) selection.current = rendered.current?.id ?? state.current?.activeId ?? null;
     }
   }
   async function imports(result: LibraryImportResult, ticket?: number) {
     const next = await ordered(async () => { const fresh = await bridge.getLibrary(); publish(fresh); return fresh; });
-    if (result.errors.length) setNotice(result.errors.map(error => `${error.name}：${error.message}`).join('\n'));
+    if (result.errors.length) setNotice('[[aurelia-renderer-list]]' + JSON.stringify(result.errors.map(error => uiMessage('importItemFailure', { name: error.name, detail: error.message }))));
     if (ticket !== undefined && ticket !== generation.current) return;
     if (result.importedIds[0]) await activate(result.importedIds[0]); else if (!result.errors.length && next.entries.length) setNotice('已存在的论文保留在原分组。');
   }
-  const importPapers = () => { const ticket = ++generation.current; cancelPending(); setLoading(false); void bridge.importPapers(selectedGroup ?? undefined).then(result => imports(result, ticket)).catch(reason => setNotice(`导入失败：${message(reason)}`)); };
+  const importPapers = () => { const ticket = ++generation.current; cancelPending(); setLoading(false); void bridge.importPapers(selectedGroup ?? undefined).then(result => imports(result, ticket)).catch(reason => setNotice(uiMessage('importFailure', { detail: message(reason) }))); };
   async function openData(file: OpenedFile, expected = generation.current) {
     if (expected !== generation.current) return;
     if (file.libraryId) { await ordered(async () => publish(await bridge.getLibrary())); if (expected === generation.current) await activate(file.libraryId, file); return; }
@@ -195,16 +199,16 @@ export function Workspace() {
   async function readRequest(read: () => Promise<OpenedFile | null>) {
     const ticket = ++generation.current; cancelPending(); setLoading(false);
     try { const file = await read(); if (file && ticket === generation.current) await openData(file, ticket); }
-    catch (reason) { if (ticket === generation.current) setNotice(`无法打开文件：${message(reason)}`); }
+    catch (reason) { if (ticket === generation.current) setNotice(uiMessage('fileFailure', { detail: message(reason) })); }
   }
   const open = useCallback(async () => readRequest(() => bridge.openPdf()), [bridge, capture, action]);
   async function relocate(id: string) {
     try {
       const result = await bridge.relocateLibraryPaper(id), fresh = await bridge.getLibrary(); publish(fresh);
-      if (result.outcome === 'mismatch') setMismatch({ id, name: result.candidateName ?? '选中的文件' });
+      if (result.outcome === 'mismatch') setMismatch({ id, name: result.candidateName ?? '' });
       if (result.outcome === 'relocated') { cache.current.delete(id); await activate(id); }
       if (result.outcome === 'existing' && result.existingId) { setNotice('选中的文件已在论文库中，请按需移出旧条目。'); await activate(result.existingId); }
-    } catch (reason) { setNotice(`重新定位失败：${message(reason)}`); }
+    } catch (reason) { setNotice(uiMessage('relocateFailure', { detail: message(reason) })); }
   }
   useEffect(() => {
     live.current = true; const ticket = ++generation.current;
@@ -227,30 +231,30 @@ export function Workspace() {
   }, []);
   useEffect(() => { document.querySelector<HTMLElement>('.paper-tabs [aria-selected="true"]')?.closest('.paper-tab')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [library?.activeId, library?.mode]);
 
-  if (!library) return <div className="workspace-start" data-workspace-ready={fatal ? 'error' : 'loading'}><BookOpen size={28} /><strong>Aurelia</strong>{fatal ? <div role="alert">论文库无法恢复：{fatal}<button onClick={() => { setFatal(''); void bridge.getLibrary().then(publish).catch(reason => setFatal(message(reason))); }}>重试恢复</button></div> : <p>正在恢复论文库…</p>}</div>;
+  if (!library) return <div className="workspace-start" data-workspace-ready={fatal ? 'error' : 'loading'}><BookOpen size={28} /><strong>Aurelia</strong>{fatal ? <div role="alert">{t('libraryRestore', { detail: translateBackendMessage(fatal, locale) })}<button onClick={() => { setFatal(''); void bridge.getLibrary().then(publish).catch(reason => setFatal(message(reason))); }}>{t("重试恢复")}</button></div> : <p>{t("正在恢复论文库…")}</p>}</div>;
   const effectiveWidth = Math.min(library.sidebarWidth, Math.max(180, width - 720));
   const panel = (dismiss?: () => void) => <LibraryPanel state={library} selectedGroup={selectedGroup} onGroup={setSelectedGroup} onAction={action} onImport={importPapers} onOpen={id => { void activate(id); }} onClose={id => { void close(id); }} onRemove={id => { void close(id, true); }}
-    onReveal={id => { void bridge.revealLibraryPaper(id).catch(reason => setNotice(`无法显示文件：${message(reason)}`)); }} onRelocate={id => { void relocate(id); }} onDismiss={dismiss} />;
-  const sidebar = library.mode === 'sidebar' ? <div className="library-sidebar" style={{ width: effectiveWidth }}>{panel()}<div className="library-resize" role="separator" aria-label="调整论文库宽度" aria-orientation="vertical" tabIndex={0} aria-valuemin={180} aria-valuemax={520} aria-valuenow={Math.round(effectiveWidth)}
+    onReveal={id => { void bridge.revealLibraryPaper(id).catch(reason => setNotice(uiMessage('revealFailure', { detail: message(reason) }))); }} onRelocate={id => { void relocate(id); }} onDismiss={dismiss} />;
+  const sidebar = library.mode === 'sidebar' ? <div className="library-sidebar" style={{ width: effectiveWidth }}>{panel()}<div className="library-resize" role="separator" aria-label={t("调整论文库宽度")} aria-orientation="vertical" tabIndex={0} aria-valuemin={180} aria-valuemax={520} aria-valuenow={Math.round(effectiveWidth)}
     onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); change({ type: 'sidebar', width: library.sidebarWidth + (event.key === 'ArrowLeft' ? -20 : 20) }); } }}
     onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { const parent = event.currentTarget.parentElement!; parent.style.width = `${Math.max(180, Math.min(520, event.clientX - parent.getBoundingClientRect().left))}px`; } }}
     onPointerUp={event => { const actual = event.currentTarget.parentElement!.getBoundingClientRect().width; event.currentTarget.releasePointerCapture(event.pointerId); change({ type: 'sidebar', width: actual }); }}><GripVertical size={12} /></div></div> : undefined;
   const activeError = library.activeId ? errors[library.activeId] : null;
   return <div className={`paper-workspace navigation-${library.mode}`} data-workspace-ready="true">
-    <div className="library-navigation"><div className="library-mode" role="group" aria-label="论文导航模式"><button aria-pressed={library.mode === 'sidebar'} onClick={() => change({ type: 'mode', mode: 'sidebar' })}><FolderTree size={15} />文件树模式</button><button aria-pressed={library.mode === 'tabs'} onClick={() => change({ type: 'mode', mode: 'tabs' })}><PanelsTopLeft size={15} />标签模式</button></div>
-      {(library.mode === 'tabs' || pagesNavigation) && <button className="library-drawer-button" onClick={() => setDrawer(value => !value)}><BookOpen size={16} />论文库</button>}
-      {library.mode === 'tabs' && <div className="paper-tabs" role="tablist" aria-label="打开的论文">{library.openIds.map(id => { const entry = library.entries.find(entry => entry.id === id)!; return <div key={id} className={`paper-tab ${library.activeId === id ? 'current' : ''}`}><button role="tab" title={entry.path} aria-label={`打开论文 ${entry.path}`} aria-selected={library.activeId === id} onClick={() => { void activate(id); }}>{entry.name}</button><button className="icon-button small" aria-label={`关闭论文 ${entry.path}`} onClick={() => { void close(id); }}><X size={13} /></button></div>; })}</div>}
+    <div className="library-navigation"><div className="library-mode" role="group" aria-label={t("论文导航模式")}><button aria-pressed={library.mode === 'sidebar'} onClick={() => change({ type: 'mode', mode: 'sidebar' })}><FolderTree size={15} />{t("文件树模式")}</button><button aria-pressed={library.mode === 'tabs'} onClick={() => change({ type: 'mode', mode: 'tabs' })}><PanelsTopLeft size={15} />{t("标签模式")}</button></div>
+      {(library.mode === 'tabs' || pagesNavigation) && <button className="library-drawer-button" onClick={() => setDrawer(value => !value)}><BookOpen size={16} />{t("论文库")}</button>}
+      {library.mode === 'tabs' && <div className="paper-tabs" role="tablist" aria-label={t("打开的论文")}>{library.openIds.map(id => { const entry = library.entries.find(entry => entry.id === id)!; return <div key={id} className={`paper-tab ${library.activeId === id ? 'current' : ''}`}><button role="tab" title={entry.path} aria-label={t("openPaper", { path: entry.path })} aria-selected={library.activeId === id} onClick={() => { void activate(id); }}>{entry.name}</button><button className="icon-button small" aria-label={t("closePaper", { path: entry.path })} onClick={() => { void close(id); }}><X size={13} /></button></div>; })}</div>}
     </div>
-    {library.recovery && <div className="workspace-notice" role="status">{library.recovery.message}</div>}
-    {notice && <div className="workspace-notice" role="alert"><span>{notice}</span><button aria-label="关闭错误提示" onClick={() => setNotice('')}><X size={16} /></button></div>}
+    {library.recovery && <div className="workspace-notice" role="status">{translateBackendMessage(library.recovery.message, locale)}</div>}
+    {notice && <div className="workspace-notice" role="alert"><span>{display(notice)}</span><button aria-label={t("关闭错误提示")} onClick={() => setNotice('')}><X size={16} /></button></div>}
     <div className="workspace-reader-host" data-reader-id={current?.id} data-reader-generation={current?.epoch}><Reader key={current ? `${current.id}/${current.resource.pdf.loadingTask.docId}/${current.epoch}` : `empty/${library.activeId ?? ''}`} managed handle={reader} resource={current?.resource} initialView={current?.view} initialSearch={current ? searches.current.get(current.id) : undefined}
       initialNavigation={current && snapshots.current.get(current.id)?.documentId === current.resource.documentId ? snapshots.current.get(current.id)?.navigation : undefined}
-      onOpen={open} onOpenData={openData} onRecent={id => readRequest(() => bridge.openRecent(id))} onSample={() => readRequest(async () => { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw new Error('示例文件不存在'); return { name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }; })}
+      onOpen={open} onOpenData={openData} onRecent={id => readRequest(() => bridge.openRecent(id))} onSample={() => readRequest(async () => { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw new Error(t("示例文件不存在")); return { name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }; })}
       onDrop={async files => { const ticket = ++generation.current; cancelPending(); setLoading(false); await imports(await bridge.importDroppedPapers(files, selectedGroup ?? undefined), ticket); }} onView={recordView} navigation={sidebar} onPagesNavigation={setPagesNavigation} libraryWidth={library.mode === 'sidebar' && !pagesNavigation ? effectiveWidth : 0} />
-      {(loading || activeError) && <div className="workspace-load-state" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }}>{loading ? <><LoaderCircle className="spin" size={24} /><strong>正在打开论文</strong><button onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开论文。可以重新打开或切换其他论文。' })); }}>取消打开</button></> : <div role="alert"><strong>{activeError}</strong><div><button onClick={() => { void activate(library.activeId!); }}>重新打开</button><button onClick={() => { void relocate(library.activeId!); }}>重新定位</button></div></div>}</div>}
-      {passwordPrompt && <form className="workspace-password" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }} onSubmit={event => { event.preventDefault(); passwordCallback.current?.(password); setPasswordPrompt(''); }}><strong>{passwordPrompt}</strong><input autoFocus type="password" aria-label="PDF 密码" value={password} onChange={event => setPassword(event.target.value)} /><div><button type="button" onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开加密论文。' })); }}>取消密码</button><button type="submit">解锁 PDF</button></div></form>}
+      {(loading || activeError) && <div className="workspace-load-state" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }}>{loading ? <><LoaderCircle className="spin" size={24} /><strong>{t("正在打开论文")}</strong><button onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开论文。可以重新打开或切换其他论文。' })); }}>{t("取消打开")}</button></> : <div role="alert"><strong>{display(activeError!)}</strong><div><button onClick={() => { void activate(library.activeId!); }}>{t("重新打开")}</button><button onClick={() => { void relocate(library.activeId!); }}>{t("重新定位")}</button></div></div>}</div>}
+      {passwordPrompt && <form className="workspace-password" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }} onSubmit={event => { event.preventDefault(); passwordCallback.current?.(password); setPasswordPrompt(''); }}><strong>{display(passwordPrompt)}</strong><input autoFocus type="password" aria-label={t("PDF 密码")} value={password} onChange={event => setPassword(event.target.value)} /><div><button type="button" onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开加密论文。' })); }}>{t("取消密码")}</button><button type="submit">{t("解锁 PDF")}</button></div></form>}
     </div>
     {drawer && <div className="library-drawer">{panel(() => setDrawer(false))}</div>}
-    {mismatch && <div className="relocation-notice" role="dialog" aria-label="文件内容不同"><strong>文件内容不同</strong><p>{mismatch.name} 与原论文内容不同。作为另一篇论文导入后，原论文与笔记将保留。</p><button onClick={() => { setMismatch(null); }}>取消</button><button onClick={() => { const id = mismatch.id; setMismatch(null); void bridge.acceptRelocationImport(id).then(imports).catch(reason => setNotice(message(reason))); }}>作为新论文导入</button></div>}
+    {mismatch && <div className="relocation-notice" role="dialog" aria-label={t("文件内容不同")}><strong>{t("文件内容不同")}</strong><p>{t('mismatch', { name: mismatch.name || t('选中的文件') })}</p><button onClick={() => { setMismatch(null); }}>{t("取消")}</button><button onClick={() => { const id = mismatch.id; setMismatch(null); void bridge.acceptRelocationImport(id).then(imports).catch(reason => setNotice(uiMessage('importFailure', { detail: message(reason) }))); }}>{t("作为新论文导入")}</button></div>}
   </div>;
 }

@@ -1,3 +1,4 @@
+import { useLanguage } from '../i18n/LanguageProvider';
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { PageSize } from '../types';
@@ -19,6 +20,7 @@ function releaseRaster(raster: Raster) {
 }
 
 export function PdfCanvas({ pdf, number, size, scale, dpr, near, retry, scrollRoot, pageElement, onError }: Props) {
+  const { t, display, locale } = useLanguage();
   const host = useRef<HTMLDivElement>(null);
   const current = useRef<Raster | null>(null);
   const [hasImage, setHasImage] = useState(false);
@@ -146,6 +148,6 @@ export function PdfCanvas({ pdf, number, size, scale, dpr, near, retry, scrollRo
   useEffect(() => () => { if (current.current) releaseRaster(current.current); current.current = null; }, []);
 
   return <><div ref={host} className="canvas-host" aria-hidden="true" />
-    {!hasImage && <div className="page-loading" aria-hidden="true">{near ? '正在渲染页面…' : `第 ${number} 页`}</div>}
+    {!hasImage && <div className="page-loading" aria-hidden="true">{near ? t("正在渲染页面…") : t('pages', { pages: number })}</div>}
   </>;
 }

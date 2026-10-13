@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import { mkdir, writeFile, readFile, copyFile, readdir } from 'node:fs/promises';
@@ -19,7 +20,7 @@ async function launch() {
   const packaged = process.env.AURELIA_TEST_EXECUTABLE;
   app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
     args: packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')], cwd: root, env });
-  page = await app.firstWindow();
+  page = await app.firstWindow(); await establishChinese(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.locator('[data-workspace-ready="true"]').waitFor();
 }

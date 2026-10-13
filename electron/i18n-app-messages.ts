@@ -1,5 +1,15 @@
 /** Application-authored errors, native menu labels and dialog labels only. */
 export const appMessages = {
+  '请在 Aurelia 桌面程序中配置和使用 AI。': 'Configure and use AI in the Aurelia desktop app.',
+  '请使用 Aurelia 桌面程序。': 'Use the Aurelia desktop app.',
+  '阅读记录保存失败。': 'Could not save reading history.',
+  '连接测试已停止。': 'Connection test stopped.',
+  '阅读记录尚未恢复。': 'Reading history has not been restored yet.',
+  '请先重试保存阅读记录，再导出笔记。': 'Retry saving reading history before exporting notes.',
+  '论文已切换，请在当前论文中重新导出。': 'The paper changed. Export again from the current paper.',
+  '无法定位此 PDF 链接的目标。': 'Could not locate this PDF link destination.',
+  '搜索位置暂时无法读取，请重试': 'The search position is unavailable. Please retry.',
+  '目标不可用': 'Destination unavailable',
   '请填写有效的 API 地址。': 'Enter a valid API URL.',
   'API 地址需要包含 https:// 或本机 http://。': 'The API URL must include https:// or a local http:// address.',
   '远程 API 请使用 HTTPS；本机服务可使用 HTTP。': 'Use HTTPS for remote APIs. Local services may use HTTP.',

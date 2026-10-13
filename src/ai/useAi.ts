@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { AiEvent, AiMessage, AiRequest, AiSettings, AiSettingsInput } from '../../electron/ai-types';
 import type { ChatEntry, Quote, ReadingSession, SessionAction } from '../../electron/session-types';
 import { applySessionAction, applySessionEvent } from '../../electron/session-model';
+import { backendErrorMessage, encodeAppMessage } from '../../electron/i18n';
 export type { ChatEntry, Quote, Status, Translation } from '../../electron/session-types';
 
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+const errorText = (error: unknown) => backendErrorMessage(error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 export function quoteContent(content: string, quote?: Quote) {
   return quote ? `${content}\n\n引用资料（${quote.fileName}，第 ${quote.pages.join('、')} 页）：\n<quoted_text>\n${quote.text}\n</quoted_text>` : content;
 }
@@ -12,6 +13,8 @@ export function quoteContent(content: string, quote?: Quote) {
 export function useAi(documentId: string | null, fileName: string, instance?: string) {
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<'general' | 'ai'>('general');
+  function openSettings(section: 'general' | 'ai' = 'general') { setSettingsSection(section); setSettingsOpen(true); }
   const [settingsError, setSettingsError] = useState('');
   const [session, setSession] = useState<ReadingSession | null>(null);
   const sessionRef = useRef<ReadingSession | null>(null);
@@ -41,12 +44,12 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   }
   useEffect(() => {
     const bridge = window.paperdesk;
-    if (!bridge) { setSettingsError('请在 Aurelia 桌面程序中配置和使用 AI。'); return; }
+    if (!bridge) { setSettingsError(encodeAppMessage('请在 Aurelia 桌面程序中配置和使用 AI。')); return; }
     let live = true;
     void bridge.getAiSettings().then(value => { if (live) setSettings(value); }).catch(error => { if (live) setSettingsError(errorText(error)); });
     const unsubscribeSave = bridge.onSessionSaveEvent(event => {
       if (event.documentId === sessionRef.current?.documentId) setSaveState(event.status);
-      if (event.status === 'error') setStorageError({ documentId: event.documentId, message: event.message ?? '阅读记录保存失败。' });
+      if (event.status === 'error') setStorageError({ documentId: event.documentId, message: event.message ?? encodeAppMessage('阅读记录保存失败。') });
       if (event.status === 'saved') setStorageError(old => old?.documentId === event.documentId ? null : old);
     });
     const unsubscribe = bridge.onAiEvent(event => {
@@ -54,7 +57,7 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
         if (event.type === 'delta') return;
         delete requests.current.test;
         if (event.type === 'done') testResult.current?.resolve();
-        else testResult.current?.reject(new Error(event.type === 'error' ? event.message : '连接测试已停止。'));
+        else testResult.current?.reject(new Error(event.type === 'error' ? event.message : encodeAppMessage('连接测试已停止。')));
         testResult.current = null;
         return;
       }
@@ -94,12 +97,12 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
 
   function configured() {
     if (!sessionReady) return false;
-    if (!window.paperdesk || !settings?.model || settings.keyError) { setSettingsOpen(true); return false; }
+    if (!window.paperdesk || !settings?.model || settings.keyError) { openSettings('ai'); return false; }
     return true;
   }
   async function commit(action: SessionAction): Promise<void> {
     const current = sessionRef.current;
-    if (!current || current.documentId !== documentId || !window.paperdesk) return Promise.reject(new Error('阅读记录尚未恢复。'));
+    if (!current || current.documentId !== documentId || !window.paperdesk) return Promise.reject(new Error(encodeAppMessage('阅读记录尚未恢复。')));
     const next = applySessionAction(current, action);
     display(next); setSaveState('saving');
     const operation = window.paperdesk.updateReadingSession(current.documentId, action).catch(error => {
@@ -114,14 +117,14 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
   }
   async function exportNotes() {
     const current = sessionRef.current;
-    if (!sessionReady || !current || current.documentId !== documentId || !window.paperdesk) throw new Error('阅读记录尚未恢复。');
-    if (storageError?.documentId === documentId) throw new Error('请先重试保存阅读记录，再导出笔记。');
+    if (!sessionReady || !current || current.documentId !== documentId || !window.paperdesk) throw new Error(encodeAppMessage('阅读记录尚未恢复。'));
+    if (storageError?.documentId === documentId) throw new Error(encodeAppMessage('请先重试保存阅读记录，再导出笔记。'));
     // IPC responses may settle after the saved notification. Await the actual
     // update operations rather than relying on that visual status alone.
     while (pendingUpdates.current.get(current.documentId)?.size) {
       await Promise.all([...pendingUpdates.current.get(current.documentId)!]);
     }
-    if (identityRef.current !== currentIdentity) throw new Error('论文已切换，请在当前论文中重新导出。');
+    if (identityRef.current !== currentIdentity) throw new Error(encodeAppMessage('论文已切换，请在当前论文中重新导出。'));
     return window.paperdesk.exportReadingNotes(current.documentId, fileName);
   }
   async function prepareToLeave() {
@@ -212,13 +215,13 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
     catch (error) { setStorageError({ documentId: key, message: errorText(error) }); }
   }
   async function save(input: AiSettingsInput) {
-    if (!window.paperdesk) throw new Error('请使用 Aurelia 桌面程序。');
+    if (!window.paperdesk) throw new Error(encodeAppMessage('请使用 Aurelia 桌面程序。'));
     const next = await window.paperdesk.saveAiSettings(input);
     setSettings(next); setSettingsError('');
     return next;
   }
   async function testConnection() {
-    if (!window.paperdesk) throw new Error('请使用 Aurelia 桌面程序。');
+    if (!window.paperdesk) throw new Error(encodeAppMessage('请使用 Aurelia 桌面程序。'));
     const id = crypto.randomUUID();
     requests.current.test = id;
     return new Promise<void>((resolve, reject) => {
@@ -229,7 +232,7 @@ export function useAi(documentId: string | null, fileName: string, instance?: st
       });
     });
   }
-  return { settings, settingsOpen, setSettingsOpen, settingsError, translation, translate, messages,
+  return { settings, settingsOpen, setSettingsOpen, settingsSection, openSettings, settingsError, translation, translate, messages,
     draft: chat?.draft ?? '', setDraft, quote: chat?.quote, setQuote, chatBusy, sendChat, retryChat, newChat, stop, save, testConnection,
     session: visible, sessionReady, sessionLoading, sessionError, saveState, storageError, retrySessionSave, selectChat, selectTranslation, commitSession: commit, exportNotes, prepareToLeave };
 }

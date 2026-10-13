@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdir, readFile, writeFile, copyFile, readdir, rename, unlink } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
@@ -42,7 +43,7 @@ test.beforeEach(async () => {
   const packaged = process.env.AURELIA_TEST_EXECUTABLE;
   app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
     args: packaged ? [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'] : [path.join(root, 'dist-electron/main.js'), '--force-device-scale-factor=1'], env });
-  page = await app.firstWindow(); await page.getByRole('heading', { name: '打开论文' }).waitFor();
+  page = await app.firstWindow(); await establishChinese(page); await page.getByRole('heading', { name: '打开论文' }).waitFor();
   await open();
 });
 test.afterEach(async () => { await app?.close(); });

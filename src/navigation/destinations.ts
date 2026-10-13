@@ -1,7 +1,8 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { appError } from '../../electron/i18n';
 
 export interface ResolvedDestination { page: number; x: number | null; y: number | null }
-const fail = (): never => { throw new Error('无法定位此 PDF 链接的目标。'); };
+const fail = (): never => { throw appError('无法定位此 PDF 链接的目标。'); };
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const optional = (value: unknown): value is number | null => value === null || finite(value);
 const clamp = (value: number) => Math.max(0, Math.min(1, value));

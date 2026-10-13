@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -15,7 +16,7 @@ async function launch() {
   const packaged = process.env.AURELIA_TEST_EXECUTABLE;
   app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
     args: packaged ? [`--user-data-dir=${profile}`, '--force-device-scale-factor=1'] : [path.join(root, 'dist-electron/main.js'), '--force-device-scale-factor=1'], env });
-  page = await app.firstWindow(); page.on('pageerror', e => errors.push(e.message));
+  page = await app.firstWindow(); await establishChinese(page); page.on('pageerror', e => errors.push(e.message));
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 960));
   await page.locator('[data-workspace-ready="true"]').waitFor();
   await app.evaluate(({ dialog }, filePath) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] }); }, paper);

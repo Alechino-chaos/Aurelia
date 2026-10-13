@@ -1,3 +1,5 @@
+import { uiMessage } from '../../electron/i18n-renderer';
+import { backendErrorMessage, encodeAppMessage } from '../../electron/i18n';
 import { emptyHistory, recordJump, stepHistory, type NavigationHistory, type NavigationPoint } from './history';
 
 export type NavigationLanding = NavigationPoint & { marginX?: number; marginY?: number; waitForLayout?: boolean };
@@ -27,7 +29,7 @@ export class NavigationController {
       if (!transaction.current() || !await this.ports.land(target, transaction.current, false) || !transaction.current()) return;
       this.history = recordJump(this.history, from, this.ports.capture());
     } catch (reason) {
-      if (transaction.current()) this.ports.notify(`无法跳转：${reason instanceof Error ? reason.message : '目标不可用'}`);
+      if (transaction.current()) this.ports.notify(uiMessage('navigationFailure', { detail: reason instanceof Error ? backendErrorMessage(reason) : encodeAppMessage('目标不可用') }));
     } finally { transaction.finish(); }
   }
   async step(direction: 'back' | 'forward') {
@@ -36,7 +38,7 @@ export class NavigationController {
     try {
       if (step.target && await this.ports.land(step.target, transaction.current, true) && transaction.current()) this.history = step.history;
     } catch (reason) {
-      if (transaction.current()) this.ports.notify(`无法恢复位置：${reason instanceof Error ? reason.message : '目标不可用'}`);
+      if (transaction.current()) this.ports.notify(uiMessage('restoreFailure', { detail: reason instanceof Error ? backendErrorMessage(reason) : encodeAppMessage('目标不可用') }));
     } finally { transaction.finish(); }
   }
 }

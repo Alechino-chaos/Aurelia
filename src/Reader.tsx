@@ -1,3 +1,5 @@
+import { uiMessage } from '../electron/i18n-renderer';
+import { useLanguage } from './i18n/LanguageProvider';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, ChevronLeft, ChevronRight, Columns2, Copy, FileText, FolderOpen, GripVertical, Highlighter, Languages, LoaderCircle, Maximize, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, Search, Settings, MessageSquare, TextSelect, X } from 'lucide-react';
@@ -9,7 +11,7 @@ import type { OpenedFile, PageSize, RecentFile, SelectedText, ReadingView } from
 import type { PdfResource } from './workspace/resources';
 import { useAi } from './ai/useAi';
 import { AiPanel } from './components/AiPanel';
-import { AiSettingsDialog } from './components/AiSettingsDialog';
+import { SettingsDialog } from './components/SettingsDialog';
 import { AnnotationsPanel } from './components/AnnotationsPanel';
 import type { Annotation } from '../electron/session-types';
 import { usePdfSearch, type SearchMemory } from './search/usePdfSearch';
@@ -43,6 +45,7 @@ type ReaderProps = { resource?: PdfResource; initialView?: ReadingView; initialS
   navigation?: React.ReactNode; onPagesNavigation?: (open: boolean) => void };
 
 export default function Reader({ resource, initialView, initialSearch, initialNavigation, handle, managed, onOpen, onOpenData, onRecent, onSample, onDrop, onView, libraryWidth = 0, navigation, onPagesNavigation }: ReaderProps = {}) {
+  const { t, display, locale } = useLanguage();
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(resource?.pdf ?? null);
   const [fileName, setFileName] = useState(resource?.name ?? '');
   const [documentKey, setDocumentKey] = useState<string | null>(resource?.documentId ?? null);
@@ -381,7 +384,7 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
     } catch (reason) {
       if (ticket === generation.current) {
         const detail = reason instanceof Error ? reason.message : String(reason);
-        setError(/Invalid PDF|InvalidPDF/i.test(detail) ? '无法打开：文件已损坏或不是有效的 PDF。' : `打开失败：${detail}`);
+        setError(/Invalid PDF|InvalidPDF/i.test(detail) ? '无法打开：文件已损坏或不是有效的 PDF。' : uiMessage('openFailure', { detail }));
         void pending.current?.destroy(); pending.current = null;
       }
     } finally { if (ticket === generation.current) { setLoading(false); setPasswordPrompt(''); } }
@@ -391,7 +394,7 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
     if (onOpen) { await onOpen(); return; }
     if (!window.paperdesk) { fileInput.current?.click(); return; }
     try { const file = await window.paperdesk.openPdf(); if (file) await openData(file); }
-    catch (reason) { setError(`无法打开文件：${reason instanceof Error ? reason.message : reason}`); }
+    catch (reason) { setError(uiMessage('fileFailure', { detail: reason instanceof Error ? reason.message : String(reason) })); }
   }, [openData, onOpen]);
   const loadBrowserFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) { setError('请选择 .pdf 文件。'); return; }
@@ -515,112 +518,112 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
       if (onDrop) await onDrop(Array.from(event.dataTransfer.files));
       else if (window.paperdesk) await openData(await window.paperdesk.openDropped(file));
       else await loadBrowserFile(file);
-    } catch (reason) { setError(`无法读取文件：${reason instanceof Error ? reason.message : reason}`); }
+    } catch (reason) { setError(uiMessage('readFailure', { detail: reason instanceof Error ? reason.message : String(reason) })); }
   }}>
     <header className="titlebar">
       <div className="brand"><img className="brand-icon" src={`${import.meta.env.BASE_URL}branding/aurelia-32.png`} alt="" /><span>Aurelia</span></div>
-      <span className="window-caption">你的论文阅读工作台</span>
+      <span className="window-caption">{t("你的论文阅读工作台")}</span>
     </header>
     <div className="workspace-toolbar">
       <div className="document-actions">
-        <button className="icon-button" title={navOpen ? '收起页码导航' : '展开页码导航'} aria-label="切换页码导航" onClick={() => { setNavOpen(value => !value); onPagesNavigation?.(!navOpen); }}>{navOpen ? <PanelLeftClose /> : <PanelLeftOpen />}</button>
-        <button className="open-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={16} /><span>打开 PDF</span></button>
+        <button className="icon-button" title={navOpen ? t("收起页码导航") : t("展开页码导航")} aria-label={t("切换页码导航")} onClick={() => { setNavOpen(value => !value); onPagesNavigation?.(!navOpen); }}>{navOpen ? <PanelLeftClose /> : <PanelLeftOpen />}</button>
+        <button className="open-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={16} /><span>{t("打开 PDF")}</span></button>
         <span className="toolbar-divider" />
-        <button className={`icon-button${search.open ? ' active' : ''}`} title="全文搜索 (Ctrl+F)" aria-label="全文搜索" aria-expanded={search.open} disabled={!pdf || loading} onClick={search.show}><Search /></button>
-        <div className="document-label" title={fileName || '尚未打开文档'}>{pdf && <FileText size={15} />}<span>{fileName || '阅读工作区'}</span></div>
+        <button className={`icon-button${search.open ? ' active' : ''}`} title={t("全文搜索 (Ctrl+F)")} aria-label={t("全文搜索")} aria-expanded={search.open} disabled={!pdf || loading} onClick={search.show}><Search /></button>
+        <div className="document-label" title={fileName || t("尚未打开文档")}>{pdf && <FileText size={15} />}<span>{fileName || t("阅读工作区")}</span></div>
       </div>
         <div className="reading-toolbar">
           <div className="history-controls">
-            <button className="icon-button small" title="后退 (Alt+←)" aria-label="后退" disabled={!pdf || !navigationController.canBack} onClick={() => void navigationController.step('back')}><ArrowLeft /></button>
-            <button className="icon-button small" title="前进 (Alt+→)" aria-label="前进" disabled={!pdf || !navigationController.canForward} onClick={() => void navigationController.step('forward')}><ArrowRight /></button>
+            <button className="icon-button small" title={t("后退 (Alt+←)")} aria-label={t("后退")} disabled={!pdf || !navigationController.canBack} onClick={() => void navigationController.step('back')}><ArrowLeft /></button>
+            <button className="icon-button small" title={t("前进 (Alt+→)")} aria-label={t("前进")} disabled={!pdf || !navigationController.canForward} onClick={() => void navigationController.step('forward')}><ArrowRight /></button>
           </div>
           <div className="page-controls">
-            <button className="icon-button small" title="上一页" aria-label="上一页" disabled={!pdf || activePage <= 1} onClick={() => goToPage(activePage - 1)}><ChevronLeft /></button>
-            <input aria-label="页码" className="page-input" inputMode="numeric" value={pdf ? pageDraft : '—'} disabled={!pdf} onChange={event => { pageDraftDirty.current = true; setPageDraft(event.target.value); }} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { pageDraftDirty.current = true; event.currentTarget.blur(); } }} onBlur={() => { if (pdf && pageDraftDirty.current) { pageDraftDirty.current = false; goToPage(Number(pageDraft)); } }} />
+            <button className="icon-button small" title={t("上一页")} aria-label={t("上一页")} disabled={!pdf || activePage <= 1} onClick={() => goToPage(activePage - 1)}><ChevronLeft /></button>
+            <input aria-label={t("页码")} className="page-input" inputMode="numeric" value={pdf ? pageDraft : '—'} disabled={!pdf} onChange={event => { pageDraftDirty.current = true; setPageDraft(event.target.value); }} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { pageDraftDirty.current = true; event.currentTarget.blur(); } }} onBlur={() => { if (pdf && pageDraftDirty.current) { pageDraftDirty.current = false; goToPage(Number(pageDraft)); } }} />
             <span className="page-count">/ {pdf?.numPages ?? '—'}</span>
-            <button className="icon-button small" title="下一页" aria-label="下一页" disabled={!pdf || activePage >= pdf.numPages} onClick={() => goToPage(activePage + 1)}><ChevronRight /></button>
+            <button className="icon-button small" title={t("下一页")} aria-label={t("下一页")} disabled={!pdf || activePage >= pdf.numPages} onClick={() => goToPage(activePage + 1)}><ChevronRight /></button>
           </div>
           <div className="zoom-controls">
-            <button className="icon-button small" title="缩小 (Ctrl+-)" aria-label="缩小" disabled={!pdf || scale <= .25} onClick={() => changeZoom(scale - .1)}><Minus /></button>
-            <select className="zoom-select" aria-label="缩放比例" disabled={!pdf} value={zoom === 'fit' ? 'fit' : String(scale)} onChange={event => changeZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}>
-              <option value="fit">适合宽度</option>
+            <button className="icon-button small" title={t("缩小 (Ctrl+-)")} aria-label={t("缩小")} disabled={!pdf || scale <= .25} onClick={() => changeZoom(scale - .1)}><Minus /></button>
+            <select className="zoom-select" aria-label={t("缩放比例")} disabled={!pdf} value={zoom === 'fit' ? 'fit' : String(scale)} onChange={event => changeZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}>
+              <option value="fit">{t("适合宽度")}</option>
               {[...new Set([.5, .75, 1, 1.25, 1.5, 2, 3, ...(zoom === 'fit' ? [] : [scale])])].sort((a, b) => a - b).map(value => <option key={value} value={value}>{Math.round(value * 100)}%</option>)}
             </select>
-            <button className="icon-button small" title="放大 (Ctrl++)" aria-label="放大" disabled={!pdf || scale >= 3} onClick={() => changeZoom(scale + .1)}><Plus /></button>
-            <button className="icon-button small fit-button" title="适合宽度 (Ctrl+0)" aria-label="适合宽度" disabled={!pdf} onClick={() => changeZoom('fit')}><Maximize /></button>
+            <button className="icon-button small" title={t("放大 (Ctrl++)")} aria-label={t("放大")} disabled={!pdf || scale >= 3} onClick={() => changeZoom(scale + .1)}><Plus /></button>
+            <button className="icon-button small fit-button" title={t("适合宽度 (Ctrl+0)")} aria-label={t("适合宽度")} disabled={!pdf} onClick={() => changeZoom('fit')}><Maximize /></button>
           </div>
 
         </div>
-      <div className="document-actions toolbar-settings"><button className="icon-button" title="AI 服务设置" aria-label="AI 服务设置" onClick={() => ai.setSettingsOpen(true)}><Settings /></button><button className={`icon-button panel-toggle ${panelOpen ? 'active' : ''}`} title={panelOpen ? '收起右侧面板' : '展开右侧面板'} aria-label="切换右侧面板" onClick={() => setPanelOpen(value => !value)}>{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</button></div>
+      <div className="document-actions toolbar-settings"><button className="icon-button" title={t('设置')} aria-label={t('设置')} onClick={() => ai.openSettings()}><Settings /></button><button className={`icon-button panel-toggle ${panelOpen ? 'active' : ''}`} title={panelOpen ? t("收起右侧面板") : t("展开右侧面板")} aria-label={t("切换右侧面板")} onClick={() => setPanelOpen(value => !value)}>{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</button></div>
     </div>
     <main className="workspace">
       {!navOpen && navigation}
-      <nav className="page-nav" aria-label="页码导航" hidden={!navOpen}>
-        <div className="document-nav-tabs" role="group" aria-label="文档导航"><button aria-pressed={navTab === 'outline'} onClick={() => setNavTab('outline')}>目录</button><button aria-pressed={navTab === 'pages'} onClick={() => setNavTab('pages')}>页码</button></div>
-        <div className="nav-title">文档导航 <span>{pdf?.numPages ?? 0} 页</span></div>
+      <nav className="page-nav" aria-label={t("页码导航")} hidden={!navOpen}>
+        <div className="document-nav-tabs" role="group" aria-label={t("文档导航")}><button aria-pressed={navTab === 'outline'} onClick={() => setNavTab('outline')}>{t("目录")}</button><button aria-pressed={navTab === 'pages'} onClick={() => setNavTab('pages')}>{t("页码")}</button></div>
+        <div className="nav-title">{t("文档导航")} <span>{t('pageCount', { count: pdf?.numPages ?? 0 })}</span></div>
         <div className="outline-slot" hidden={navTab !== 'outline'}><DocumentOutline key={pdf?.loadingTask.docId ?? 'empty'} pdf={pdf} onLink={onNativeLink} /></div>
-        {navTab === 'pages' && (pdf ? <div className="page-list">{sizes.map((_, index) => <button key={index} className={`page-link ${activePage === index + 1 ? 'current' : ''}`} onClick={() => goToPage(index + 1)} aria-current={activePage === index + 1 ? 'page' : undefined}><FileText size={16} /><span>第 {index + 1} 页</span>{activePage === index + 1 && <span className="current-dot" />}</button>)}</div> : <p className="nav-empty">打开 PDF 后<br />在这里切换页面</p>)}
-        <div className="nav-footer"><BookOpen size={14} /> 连续阅读</div>
+        {navTab === 'pages' && (pdf ? <div className="page-list">{sizes.map((_, index) => <button key={index} className={`page-link ${activePage === index + 1 ? 'current' : ''}`} onClick={() => goToPage(index + 1)} aria-current={activePage === index + 1 ? 'page' : undefined}><FileText size={16} /><span>{t('pages', { pages: index + 1 })}</span>{activePage === index + 1 && <span className="current-dot" />}</button>)}</div> : <p className="nav-empty">{t("打开 PDF 后")}<br />{t("在这里切换页面")}</p>)}
+        <div className="nav-footer"><BookOpen size={14} /> {t("连续阅读")}</div>
       </nav>
       <div className="reading-workspace">
         {search.open && <SearchBar search={search} page={activePage} onClose={closeSearch} />}
-        {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button small" aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div>}
-        <div className={`reader ${!pdf ? 'reader-empty' : ''}`} ref={reader} onScroll={onScroll} tabIndex={0} aria-label="PDF 连续阅读区">
-          {pdf ? <div className="pages" key={pdf.loadingTask.docId} data-document-id={pdf.loadingTask.docId}>{sizes.map((size, index) => <PdfPage key={index} pdf={pdf} number={index + 1} size={size} scale={scale} dpr={pixelRatio} autoColumns={autoColumns} scrollRoot={reader} annotations={annotations} activeAnnotationId={activeAnnotationId} onAnnotationSelect={selectAnnotation}
+        {error && <div className="error-banner" role="alert"><span>{display(error)}</span><button className="icon-button small" aria-label={t("关闭错误提示")} onClick={() => setError('')}><X /></button></div>}
+        <div className={`reader ${!pdf ? 'reader-empty' : ''}`} ref={reader} onScroll={onScroll} tabIndex={0} aria-label={t("PDF 连续阅读区")}>
+          {pdf ? <div className={'pages'} key={pdf.loadingTask.docId} data-document-id={pdf.loadingTask.docId}>{sizes.map((size, index) => <PdfPage key={index} pdf={pdf} number={index + 1} size={size} scale={scale} dpr={pixelRatio} autoColumns={autoColumns} scrollRoot={reader} annotations={annotations} activeAnnotationId={activeAnnotationId} onAnnotationSelect={selectAnnotation}
             searchMatches={search.byPage.get(index + 1) ?? noSearchMatches} searchActiveId={search.activeId}
-            searchNavigation={search.navigation?.match.page === index + 1 ? search.navigation : null} onNativeLink={onNativeLink} />)}<div className="document-end">— 已到文档末尾 —</div></div> : <div className="welcome">
+            searchNavigation={search.navigation?.match.page === index + 1 ? search.navigation : null} onNativeLink={onNativeLink} />)}<div className="document-end">{t("— 已到文档末尾 —")}</div></div> : <div className="welcome">
             <img className="welcome-logo" src={import.meta.env.BASE_URL + 'branding/aurelia.png'} alt="" />
-            <h1>打开论文</h1>
-            <p>打开或拖入 PDF，开始阅读、选取和翻译。</p>
-            <button className="primary-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={17} /> 打开本地 PDF <span>Ctrl O</span></button>
+            <h1>{t("打开论文")}</h1>
+            <p>{t("打开或拖入 PDF，开始阅读、选取和翻译。")}</p>
+            <button className="primary-button" onClick={() => void openFile()} disabled={loading}><FolderOpen size={17} /> {t("打开本地 PDF")} <span>Ctrl O</span></button>
             <button className="sample-button" disabled={loading} onClick={async () => {
               if (onSample) { await onSample(); return; }
-              try { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw new Error('示例文件不存在'); await openData({ name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }); }
+              try { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw new Error(t("示例文件不存在")); await openData({ name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }); }
               catch { setError('无法加载内置示例，请打开本地 PDF。'); }
-            }}>体验双栏示例 <ArrowUpRight size={14} /></button>
-            {recent.length > 0 && <div className="recent-files"><div className="recent-title">最近阅读</div>{recent.slice(0, 3).map(file => <button key={file.id} disabled={loading} onClick={async () => { try { if (onRecent) await onRecent(file.id); else await openData(await window.paperdesk!.openRecent(file.id)); } catch { setError('文件可能已移动或删除，请重新打开。'); } }}><FileText size={16} /><span>{file.name}</span><ChevronRight size={14} /></button>)}</div>}
-            <div className="welcome-footnote"><span className="local-dot" /> 文件保留在本机，无需上传</div>
+            }}>{t("体验双栏示例")} <ArrowUpRight size={14} /></button>
+            {recent.length > 0 && <div className="recent-files"><div className="recent-title">{t("最近阅读")}</div>{recent.slice(0, 3).map(file => <button key={file.id} disabled={loading} onClick={async () => { try { if (onRecent) await onRecent(file.id); else await openData(await window.paperdesk!.openRecent(file.id)); } catch { setError('文件可能已移动或删除，请重新打开。'); } }}><FileText size={16} /><span>{file.name}</span><ChevronRight size={14} /></button>)}</div>}
+            <div className="welcome-footnote"><span className="local-dot" /> {t("文件保留在本机，无需上传")}</div>
           </div>}
         </div>
-        {loading && !passwordPrompt && <div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28} /><strong>正在打开论文</strong><span>{progress > 0 ? `${progress}%` : '读取文档中…'}</span><button className="text-button" onClick={cancelLoading}>取消</button></div>}
+        {loading && !passwordPrompt && <div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28} /><strong>{t("正在打开论文")}</strong><span>{progress > 0 ? `${progress}%` : t("读取文档中…")}</span><button className="text-button" onClick={cancelLoading}>{t("取消")}</button></div>}
       </div>
-      {panelOpen && <><div className="resize-handle" role="separator" aria-orientation="vertical" aria-label="调整右侧面板宽度" tabIndex={0} aria-valuemin={280} aria-valuemax={maxPanelWidth} aria-valuenow={Math.round(effectivePanelWidth)} onDoubleClick={() => setPanelWidth(400)} onKeyDown={event => {
+      {panelOpen && <><div className="resize-handle" role="separator" aria-orientation="vertical" aria-label={t("调整右侧面板宽度")} tabIndex={0} aria-valuemin={280} aria-valuemax={maxPanelWidth} aria-valuenow={Math.round(effectivePanelWidth)} onDoubleClick={() => setPanelWidth(400)} onKeyDown={event => {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setPanelWidth(Math.min(maxPanelWidth, safeWidth(effectivePanelWidth + (event.key === 'ArrowLeft' ? 20 : -20)))); }
       }} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setResizing(true); }} onPointerMove={event => {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(Math.min(maxPanelWidth, safeWidth(window.innerWidth - event.clientX)));
       }} onPointerUp={event => { event.currentTarget.releasePointerCapture(event.pointerId); setResizing(false); }} onLostPointerCapture={() => setResizing(false)}><GripVertical size={12} /></div>
-      <aside className="inspector" style={{ width: effectivePanelWidth } as CSSProperties} aria-label="右侧上下文面板">
-        <div className="inspector-tabs" role="tablist" aria-label="阅读助手">{([['selection', '选区'], ['translation', '翻译'], ['chat', '对话'], ['annotations', '批注']] as const).map(([tab, label]) => <button key={tab} role="tab" aria-selected={panelTab === tab} className={`inspector-tab ${panelTab === tab ? 'selected' : ''}`} onClick={() => setPanelTab(tab)}>{label}</button>)}</div>
+      <aside className="inspector" style={{ width: effectivePanelWidth } as CSSProperties} aria-label={t("右侧上下文面板")}>
+        <div className="inspector-tabs" role="tablist" aria-label={t("阅读助手")}>{([['selection', t("选区")], ['translation', t("翻译")], ['chat', t("对话")], ['annotations', t("批注")]] as const).map(([tab, label]) => <button key={tab} role="tab" aria-selected={panelTab === tab} className={`inspector-tab ${panelTab === tab ? 'selected' : ''}`} onClick={() => setPanelTab(tab)}>{label}</button>)}</div>
         {panelTab === 'selection' ? <><div className="inspector-content">
           {selection ? <>
-            <div className="selection-source"><button className="source-link" title={fileName} onClick={() => goToPage(selection.pages[0])}><FileText size={16} /><span>{fileName} · 第 {selection.pages.join('、')} 页</span></button><button className="icon-button small" title="清空选区" aria-label="清空选区" onClick={() => { setSelection(null); window.getSelection()?.removeAllRanges(); }}><X /></button></div>
-            <div className="preview-switch" role="group" aria-label="选区预览模式"><button className={preview === 'clean' ? 'selected' : ''} onClick={() => setPreview('clean')}>清理后</button><button className={preview === 'raw' ? 'selected' : ''} onClick={() => setPreview('raw')}>原始文本</button><span>{clean.length} 字符</span></div>
+            <div className="selection-source"><button className="source-link" title={fileName} onClick={() => goToPage(selection.pages[0])}><FileText size={16} /><span>{t('source', { name: fileName, pages: selection.pages.join(locale === 'en' ? ', ' : '、') })}</span></button><button className="icon-button small" title={t("清空选区")} aria-label={t("清空选区")} onClick={() => { setSelection(null); window.getSelection()?.removeAllRanges(); }}><X /></button></div>
+            <div className="preview-switch" role="group" aria-label={t("选区预览模式")}><button className={preview === 'clean' ? 'selected' : ''} onClick={() => setPreview('clean')}>{t("清理后")}</button><button className={preview === 'raw' ? 'selected' : ''} onClick={() => setPreview('raw')}>{t("原始文本")}</button><span>{t('characters', { count: clean.length })}</span></div>
             <blockquote className="selection-preview" data-testid="selection-preview">{preview === 'clean' ? clean : selection.raw}</blockquote>
             <div className="selection-actions">
-              <button className="primary-button" aria-label="复制清理文本" title="复制清理文本 (Ctrl+C)" onClick={() => void copyText('clean')}><Copy size={16} />复制</button>
-              <button aria-label="翻译选区" onClick={translateSelection}><Languages size={16} />翻译</button>
-              <button aria-label="引用到对话" onClick={askSelection}><MessageSquare size={16} />提问</button>
+              <button className="primary-button" aria-label={t("复制清理文本")} title={t("复制清理文本 (Ctrl+C)")} onClick={() => void copyText('clean')}><Copy size={16} />{t("复制")}</button>
+              <button aria-label={t("翻译选区")} onClick={translateSelection}><Languages size={16} />{t("翻译")}</button>
+              <button aria-label={t("引用到对话")} onClick={askSelection}><MessageSquare size={16} />{t("提问")}</button>
             </div>
-          </> : <div className="inspector-empty"><TextSelect size={24} strokeWidth={1.5} /><h2>未选择文字</h2><p>在论文中拖动选取文字，<br />查看原文、复制或翻译。</p></div>}
-          <details className="copy-options"><summary>复制选项<ChevronRight size={15} /></summary>
-            <div className="setting-row"><span>文本顺序</span><div className="order-control"><Columns2 size={14} /><select aria-label="文本阅读顺序" value={autoColumns ? 'auto' : 'source'} onChange={event => { window.getSelection()?.removeAllRanges(); setSelection(null); setAutoColumns(event.target.value === 'auto'); }}><option value="auto">自动分栏</option><option value="source">PDF 原始顺序</option></select></div></div>
-            {selection && <div className="copy-actions"><button onClick={() => void copyText('raw')}>原样复制</button><button onClick={() => void copyText('citation')}>带出处复制 <ArrowUpRight size={12} /></button></div>}
-            <div className="setting-row"><span>合并段内换行</span><span className="enabled-value"><Check size={13} /> 已启用</span></div>
-            <label className="setting-checkbox"><span>删除行末断词连字符</span><input type="checkbox" checked={repairHyphens} onChange={event => setRepairHyphens(event.target.checked)} /></label>
-            <p className="setting-help">默认保留可见连字符。开启后请核对复合词与公式，避免改变原意。</p>
+          </> : <div className="inspector-empty"><TextSelect size={24} strokeWidth={1.5} /><h2>{t("未选择文字")}</h2><p>{t("在论文中拖动选取文字，")}<br />{t("查看原文、复制或翻译。")}</p></div>}
+          <details className="copy-options"><summary>{t("复制选项")}<ChevronRight size={15} /></summary>
+            <div className="setting-row"><span>{t("文本顺序")}</span><div className="order-control"><Columns2 size={14} /><select aria-label={t("文本阅读顺序")} value={autoColumns ? 'auto' : 'source'} onChange={event => { window.getSelection()?.removeAllRanges(); setSelection(null); setAutoColumns(event.target.value === 'auto'); }}><option value="auto">{t("自动分栏")}</option><option value={'source'}>{t("PDF 原始顺序")}</option></select></div></div>
+            {selection && <div className="copy-actions"><button onClick={() => void copyText('raw')}>{t("原样复制")}</button><button onClick={() => void copyText('citation')}>{t("带出处复制")} <ArrowUpRight size={12} /></button></div>}
+            <div className="setting-row"><span>{t("合并段内换行")}</span><span className="enabled-value"><Check size={13} /> {t("已启用")}</span></div>
+            <label className="setting-checkbox"><span>{t("删除行末断词连字符")}</span><input type="checkbox" checked={repairHyphens} onChange={event => setRepairHyphens(event.target.checked)} /></label>
+            <p className="setting-help">{t("默认保留可见连字符。开启后请核对复合词与公式，避免改变原意。")}</p>
           </details>
         </div>
         </> : panelTab === 'annotations' ? <AnnotationsPanel key={`${documentKey}:${pdf?.loadingTask.docId}`} ai={ai} activeId={activeAnnotationId} editRequest={annotationEditRequest} onSelect={setActiveAnnotationId} onLocate={locateAnnotation} onDelete={deleteAnnotation} onUndo={undoAnnotation} undoAvailable={!!deletedAnnotation} onAsk={askAnnotation} /> : <AiPanel ai={ai} tab={panelTab} currentQuote={currentQuote} onPage={goToPage} noteTarget={activeAnnotation?.quote.text} onSaveNote={activeAnnotation ? saveAnswerToAnnotation : undefined} />}
       </aside></>}
     </main>
-    <footer className="statusbar"><div><span className="local-dot" /><span>本地阅读</span><span className="status-separator">/</span><span>{pdf ? `${pdf.numPages} 页` : '尚未打开文档'}</span></div><div>{pdf && <span>{Math.round(scale * 100)}%</span>}<span><TextSelect size={12} /> {autoColumns ? '自动分栏选择' : '原始文本顺序'}</span><span className="status-shortcut">Ctrl C 复制 · Ctrl Shift C 原样复制</span></div></footer>
-    {selection && showSelectionTools && <div className="selection-toolbar" role="toolbar" aria-label="选区操作" style={{ left: Math.max(12, Math.min(selection.rect.left, window.innerWidth - 544)), top: selection.rect.top > 180 ? selection.rect.top - 44 : selection.rect.bottom + 8 }} onMouseDown={event => event.preventDefault()}>
-      <button onClick={() => void copyText('clean')}><Copy size={14} />复制</button><button disabled={!ai.sessionReady} onClick={() => addAnnotation()}><Highlighter size={14} />高亮</button><button disabled={!ai.sessionReady} onClick={() => addAnnotation(true)}><MessageSquare size={14} />批注</button><span /><button onClick={translateSelection}><Languages size={14} />翻译</button><button onClick={askSelection}><MessageSquare size={14} />问 AI</button><span /><div className="highlight-colors" role="group" aria-label="新高亮颜色">{(['yellow', 'green'] as const).map(color => <button key={color} className={`color-swatch ${color}`} aria-label={color === 'yellow' ? '使用浅黄' : '使用浅绿'} aria-pressed={highlightColor === color} onClick={() => setHighlightColor(color)} />)}</div><button title="查看选区" aria-label="查看选区" onClick={() => { setPanelOpen(true); setPanelTab('selection'); setShowSelectionTools(false); }}><TextSelect size={14} /></button>
+    <footer className="statusbar"><div><span className="local-dot" /><span>{t("本地阅读")}</span><span className="status-separator">/</span><span>{pdf ? t('pageCount', { count: pdf.numPages }) : t("尚未打开文档")}</span></div><div>{pdf && <span>{Math.round(scale * 100)}%</span>}<span><TextSelect size={12} /> {autoColumns ? t("自动分栏选择") : t("原始文本顺序")}</span><span className="status-shortcut">{t("Ctrl C 复制 · Ctrl Shift C 原样复制")}</span></div></footer>
+    {selection && showSelectionTools && <div className="selection-toolbar" role="toolbar" aria-label={t("选区操作")} style={{ left: Math.max(12, Math.min(selection.rect.left, window.innerWidth - 544)), top: selection.rect.top > 180 ? selection.rect.top - 44 : selection.rect.bottom + 8 }} onMouseDown={event => event.preventDefault()}>
+      <button onClick={() => void copyText('clean')}><Copy size={14} />{t("复制")}</button><button disabled={!ai.sessionReady} onClick={() => addAnnotation()}><Highlighter size={14} />{t("高亮")}</button><button disabled={!ai.sessionReady} onClick={() => addAnnotation(true)}><MessageSquare size={14} />{t("批注")}</button><span /><button onClick={translateSelection}><Languages size={14} />{t("翻译")}</button><button onClick={askSelection}><MessageSquare size={14} />{t("问 AI")}</button><span /><div className="highlight-colors" role="group" aria-label={t("新高亮颜色")}>{(['yellow', 'green'] as const).map(color => <button key={color} className={`color-swatch ${color}`} aria-label={color === 'yellow' ? t("使用浅黄") : t("使用浅绿")} aria-pressed={highlightColor === color} onClick={() => setHighlightColor(color)} />)}</div><button title={t("查看选区")} aria-label={t("查看选区")} onClick={() => { setPanelOpen(true); setPanelTab('selection'); setShowSelectionTools(false); }}><TextSelect size={14} /></button>
     </div>}
-    <input ref={fileInput} className="hidden" type="file" accept=".pdf,application/pdf" aria-label="选择 PDF 文件" onChange={async event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) { try { await loadBrowserFile(file); } catch { setError('无法读取文件。'); } } }} />
-    {toast && <div className="toast" role="status"><Check size={15} />{toast}</div>}
-    {ai.settingsOpen && <AiSettingsDialog ai={ai} />}
-    {draggingFile && <div className="drop-overlay"><FolderOpen size={42} /><h2>松开以打开 PDF</h2><p>文件只在本机读取</p></div>}
-    {passwordPrompt && <div className="modal-backdrop"><form className="password-dialog" onSubmit={event => { event.preventDefault(); passwordCallback.current?.(password); setPasswordPrompt(''); }}><BookOpen size={26} /><h2>{passwordPrompt}</h2><input autoFocus type="password" aria-label="PDF 密码" value={password} onChange={event => setPassword(event.target.value)} /><div><button type="button" className="text-button" onClick={cancelLoading}>取消</button><button type="submit" className="primary-button">解锁 PDF</button></div></form></div>}
+    <input ref={fileInput} className="hidden" type="file" accept=".pdf,application/pdf" aria-label={t("选择 PDF 文件")} onChange={async event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) { try { await loadBrowserFile(file); } catch { setError('无法读取文件。'); } } }} />
+    {toast && <div className="toast" role="status"><Check size={15} />{display(toast)}</div>}
+    {ai.settingsOpen && <SettingsDialog ai={ai} />}
+    {draggingFile && <div className="drop-overlay"><FolderOpen size={42} /><h2>{t("松开以打开 PDF")}</h2><p>{t("文件只在本机读取")}</p></div>}
+    {passwordPrompt && <div className="modal-backdrop"><form className="password-dialog" onSubmit={event => { event.preventDefault(); passwordCallback.current?.(password); setPasswordPrompt(''); }}><BookOpen size={26} /><h2>{display(passwordPrompt)}</h2><input autoFocus type="password" aria-label={t("PDF 密码")} value={password} onChange={event => setPassword(event.target.value)} /><div><button type="button" className="text-button" onClick={cancelLoading}>{t("取消")}</button><button type="submit" className="primary-button">{t("解锁 PDF")}</button></div></form></div>}
   </div>;
 }

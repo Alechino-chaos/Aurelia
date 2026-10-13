@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -32,7 +33,7 @@ test.describe.serial('sharp and responsive zoom', () => {
     const packaged = process.env.AURELIA_TEST_EXECUTABLE;
     app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
       args: [...(packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')]), '--force-device-scale-factor=2'], cwd: root, env });
-    page = await app.firstWindow();
+    page = await app.firstWindow(); await establishChinese(page);
     page.on('pageerror', error => errors.push(error.message));
     await page.getByRole('heading', { name: '打开论文' }).waitFor();
   });

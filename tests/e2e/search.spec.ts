@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -41,7 +42,7 @@ test.describe.serial('full-document search', () => {
     const packaged = process.env.AURELIA_TEST_EXECUTABLE;
     app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
       args: [...(packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')]), '--force-device-scale-factor=1'], env });
-    page = await app.firstWindow(); page.on('pageerror', e => errors.push(e.message));
+    page = await app.firstWindow(); await establishChinese(page); page.on('pageerror', e => errors.push(e.message));
     await page.getByRole('heading', { name: '打开论文' }).waitFor();
     await open(paper);
   });
@@ -159,7 +160,7 @@ test.describe.serial('full-document search', () => {
     expect(after.top).toBe(Math.min(position, after.maximum));
     await page.keyboard.press('Control+f');
     await expect(page.getByRole('textbox', { name: '搜索论文全文' })).toHaveValue('LastPageNeedle');
-    await page.getByRole('button', { name: 'AI 服务设置' }).click();
+    await page.getByRole('button', { name: '设置' }).click();
     await page.keyboard.press('Control+f');
     expect(await page.getByRole('textbox', { name: '搜索论文全文' }).evaluate(el => el === document.activeElement)).toBe(false);
     expect(errors).toEqual([]);

@@ -1,3 +1,4 @@
+import { useLanguage } from '../i18n/LanguageProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { getPageText } from '../pdf/documentText';
@@ -9,6 +10,7 @@ export type SearchMemory = { open: boolean; query: string; caseSensitive: boolea
 const noMatches: SearchMatch[] = [];
 
 export function usePdfSearch(pdf: PDFDocumentProxy | null, autoColumns: boolean, initial?: SearchMemory) {
+  const { t, display, locale } = useLanguage();
   const [open, setOpen] = useState(initial?.open ?? false), [query, setQuery] = useState(initial?.query ?? '');
   const [caseSensitive, setCaseSensitive] = useState(initial?.caseSensitive ?? false), [repairHyphens, setRepairHyphens] = useState(initial?.repairHyphens ?? false);
   const [composing, setComposing] = useState(false), [focusVersion, setFocusVersion] = useState(0), [retry, setRetry] = useState(0);
@@ -70,17 +72,17 @@ export function usePdfSearch(pdf: PDFDocumentProxy | null, autoColumns: boolean,
     let wrapped = '';
     if (index < 0 || index >= matches.length) {
       index = direction === 1 ? 0 : matches.length - 1;
-      wrapped = direction === 1 ? '已回到搜索结果开头' : '已回到搜索结果末尾';
+      wrapped = direction === 1 ? t("已回到搜索结果开头") : t("已回到搜索结果末尾");
     }
     setNotice(wrapped);
     setSelection({ key, pdf, navigation: { match: matches[index], serial: ++serial.current } });
   }
-  let status = '输入关键词搜索全文';
+  let status = t("输入关键词搜索全文");
   if (query.trim()) {
-    if (composing) status = '正在输入…';
-    else if (busy) status = `正在搜索 ${progress?.processed ?? 0} / ${pdf?.numPages ?? 0} 页 · ${matches.length} 处匹配`;
-    else if (matches.length) status = current >= 0 ? `${current + 1} / ${matches.length}` : `${matches.length} 处匹配`;
-    else status = progress?.emptyPages === pdf?.numPages ? '这篇文档没有可搜索文本' : progress?.failed.length ? '已搜索页面未找到匹配' : '未找到匹配';
+    if (composing) status = t("正在输入…");
+    else if (busy) status = t('searchProgress', { processed: progress?.processed ?? 0, total: pdf?.numPages ?? 0, count: matches.length });
+    else if (matches.length) status = current >= 0 ? `${current + 1} / ${matches.length}` : matches.length === 1 ? t('match') : t('matches', { count: matches.length });
+    else status = progress?.emptyPages === pdf?.numPages ? t("这篇文档没有可搜索文本") : progress?.failed.length ? t("已搜索页面未找到匹配") : t("未找到匹配");
   }
   return { open, query, setQuery, caseSensitive, setCaseSensitive, repairHyphens, setRepairHyphens,
     composing, setComposing, focusVersion, show, close, move, status, notice, busy, progress, byPage, activeId, navigation,

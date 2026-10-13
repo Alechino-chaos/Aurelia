@@ -1,3 +1,4 @@
+import { appError } from '../../electron/i18n';
 import type { SearchMatch } from '../pdf/search';
 
 /** Wait for the requested page's text, without moving the viewport to make it visible. */
@@ -18,7 +19,7 @@ export function searchLanding(root: HTMLElement, match: SearchMatch, signal: Abo
           resolve({ page: match.page, x: (rect.left - bounds.left) / bounds.width, y: (rect.top - bounds.top) / bounds.height }); return;
         }
       }
-      if (++attempts > 600) { cleanup(); reject(new Error('搜索位置暂时无法读取，请重试')); return; }
+      if (++attempts > 600) { cleanup(); reject(appError('搜索位置暂时无法读取，请重试')); return; }
       frame = requestAnimationFrame(measure);
     };
     // TextLayer updates its metrics during layout; measure the next completed frame.

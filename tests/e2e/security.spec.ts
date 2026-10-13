@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -14,7 +15,7 @@ let app: ElectronApplication, page: Page;
 test.describe.serial('desktop security boundaries', () => {
   test.beforeAll(async () => {
     await mkdir(profile, { recursive: true });
-    app = await electron.launch({ executablePath, args, env }); page = await app.firstWindow();
+    app = await electron.launch({ executablePath, args, env }); page = await app.firstWindow(); await establishChinese(page);
     await page.getByRole('heading', { name: '打开论文' }).waitFor();
   });
   test.afterAll(async () => { await app?.close(); });

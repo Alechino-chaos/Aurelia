@@ -1,3 +1,4 @@
+import { establishChinese, openAiSettings } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -29,7 +30,7 @@ async function launch() {
   delete env.ELECTRON_RUN_AS_NODE;
   const packagedExecutable = process.env.AURELIA_TEST_EXECUTABLE;
   app = await electron.launch({ executablePath: packagedExecutable || process.env.PAPERDESK_ELECTRON_PATH, args: packagedExecutable ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')], cwd: root, env });
-  page = await app.firstWindow();
+  page = await app.firstWindow(); await establishChinese(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.locator('[data-workspace-ready="true"]').waitFor();
 }
@@ -70,7 +71,7 @@ test.describe.serial('AI translation and conversation', () => {
   test.afterAll(async () => { await app?.close(); server?.closeAllConnections(); await new Promise<void>(resolve => server?.close(() => resolve())); });
 
   test('configures and tests an endpoint while keeping its key encrypted and out of renderer reads', async () => {
-    await page.getByRole('button', { name: 'AI 服务设置', exact: true }).click();
+    await openAiSettings(page);
     await page.getByRole('textbox', { name: 'API 地址', exact: true }).fill(baseUrl);
     await page.getByLabel('API Key', { exact: true }).fill('dummy-test-key');
     await page.getByRole('textbox', { name: '模型名称', exact: true }).fill('test-model');
@@ -85,14 +86,14 @@ test.describe.serial('AI translation and conversation', () => {
     const publicConfig = await page.evaluate(() => window.paperdesk!.getAiSettings());
     expect(JSON.stringify(publicConfig)).not.toContain('dummy-test-key');
     expect(publicConfig.hasApiKey).toBe(true);
-    await page.getByRole('button', { name: '关闭 AI 设置' }).click();
+    await page.getByRole('button', { name: '关闭设置' }).click();
     await app.close();
     await launch();
-    await page.getByRole('button', { name: 'AI 服务设置', exact: true }).click();
+    await openAiSettings(page);
     await expect(page.getByRole('textbox', { name: '模型名称', exact: true })).toHaveValue('test-model');
     await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('API Key', { exact: true })).toHaveAttribute('placeholder', '已保存，留空保持不变');
-    await page.getByRole('button', { name: '关闭 AI 设置' }).click();
+    await page.getByRole('button', { name: '关闭设置' }).click();
   });
 
   test('translates an exact PDF selection and copies the streamed translation', async () => {
@@ -196,7 +197,7 @@ test.describe.serial('AI translation and conversation', () => {
   });
 
   test('guards provider changes, clears stored keys and cancels document-scoped conversations', async () => {
-    await page.getByRole('button', { name: 'AI 服务设置', exact: true }).click();
+    await openAiSettings(page);
     await page.getByRole('textbox', { name: 'API 地址', exact: true }).fill(baseUrl.replace('127.0.0.1', 'localhost'));
     await page.getByRole('button', { name: '保存设置', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('更换服务商');
@@ -208,7 +209,7 @@ test.describe.serial('AI translation and conversation', () => {
     expect(JSON.parse(await readFile(path.join(profile, 'ai-settings.json'), 'utf8')).encryptedKey).toBeUndefined();
     await mkdir('test-results/screenshots', { recursive: true });
     await page.screenshot({ path: 'test-results/screenshots/ai-settings.png' });
-    await page.getByRole('button', { name: '关闭 AI 设置' }).click();
+    await page.getByRole('button', { name: '关闭设置' }).click();
     mode = 'slow';
     await page.getByRole('textbox', { name: 'AI 消息', exact: true }).fill('测试切换文档');
     await page.getByRole('button', { name: '发送消息' }).click();

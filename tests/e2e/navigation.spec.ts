@@ -1,3 +1,4 @@
+import { establishChinese } from './language-helper';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
@@ -55,7 +56,7 @@ test.describe.serial('native document navigation', () => {
     const packaged = process.env.AURELIA_TEST_EXECUTABLE;
     app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
       args: [...(packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')]), '--force-device-scale-factor=1'], env });
-    page = await app.firstWindow(); page.on('pageerror', error => errors.push(error.message));
+    page = await app.firstWindow(); await establishChinese(page); page.on('pageerror', error => errors.push(error.message));
     await page.getByRole('heading', { name: '打开论文' }).waitFor(); await open(paper);
     await page.getByRole('button', { name: '切换右侧面板' }).click();
   });
@@ -169,8 +170,8 @@ test.describe.serial('native document navigation', () => {
     expect(await position()).toEqual(jumped);
     await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, isComposing: true })));
     expect(await position()).toEqual(jumped); await input.blur();
-    await page.getByRole('button', { name: 'AI 服务设置' }).click(); await page.keyboard.press('Alt+ArrowLeft');
-    expect(await position()).toEqual(jumped); await page.getByRole('button', { name: '关闭 AI 设置' }).click();
+    await page.getByRole('button', { name: '设置' }).click(); await page.keyboard.press('Alt+ArrowLeft');
+    expect(await position()).toEqual(jumped); await page.getByRole('button', { name: '关闭设置' }).click();
     await page.getByRole('button', { name: '后退', exact: true }).click();
     await expect.poll(async () => Math.abs((await position()).top - canceled.top)).toBeLessThan(1);
     void before; await top();
@@ -301,7 +302,7 @@ test.describe.serial('native document navigation', () => {
     const packaged = process.env.AURELIA_TEST_EXECUTABLE;
     app = await electron.launch({ executablePath: packaged ?? process.env.PAPERDESK_ELECTRON_PATH,
       args: [...(packaged ? [`--user-data-dir=${profile}`] : [path.join(root, 'dist-electron/main.js')]), '--force-device-scale-factor=1'], env });
-    page = await app.firstWindow(); await expect(page.locator('.document-label')).toHaveText(path.basename(copy));
+    page = await app.firstWindow(); await establishChinese(page); await expect(page.locator('.document-label')).toHaveText(path.basename(copy));
     await expect(page.getByRole('textbox', { name: '页码', exact: true })).toHaveValue('2');
     await expect(page.getByRole('button', { name: '后退', exact: true })).toBeDisabled();
     await turn(1); await open(third); await copyFile(blank, copy); await open(copy);
@@ -313,7 +314,7 @@ test.describe.serial('native document navigation', () => {
     await open(paper); await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(960, 700));
     await page.getByRole('combobox', { name: '缩放比例' }).selectOption('fit');
     await page.getByRole('button', { name: '切换页码导航' }).click();
-    for (const name of ['后退', '前进', '打开 PDF', 'AI 服务设置', '切换右侧面板']) {
+    for (const name of ['后退', '前进', '打开 PDF', '设置', '切换右侧面板']) {
       const box = await page.getByRole('button', { name, exact: true }).boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(960);
     }

@@ -1,3 +1,4 @@
+import { useLanguage } from '../i18n/LanguageProvider';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getPageText } from '../pdf/documentText';
@@ -21,6 +22,7 @@ type Props = {
 };
 
 export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot, annotations, activeAnnotationId, onAnnotationSelect, searchMatches, searchActiveId, searchNavigation, onNativeLink }: Props) {
+  const { t, display, locale } = useLanguage();
   const pageElement = useRef<HTMLDivElement>(null);
   const textHost = useRef<HTMLDivElement>(null);
   const activeText = useRef<{ layer: TextLayer; container: HTMLDivElement; page: PDFPageProxy } | null>(null);
@@ -92,8 +94,8 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
     return () => { disposed = true; activeText.current = null; releaseSelectionGuard?.(); layer?.cancel(); container.remove(); };
   }, [pdf, number, visited, autoColumns, retry]);
 
-  return <section className="page-shell" aria-label={`第 ${number} 页`}>
-    <div className="page-caption"><span>{String(number).padStart(2, '0')}</span><span>{autoColumns && columns === 2 ? '双栏阅读顺序' : 'PDF 文本层'}</span></div>
+  return <section className="page-shell" aria-label={t('pages', { pages: number })}>
+    <div className="page-caption"><span>{String(number).padStart(2, '0')}</span><span>{autoColumns && columns === 2 ? t("双栏阅读顺序") : t("PDF 文本层")}</span></div>
     <div ref={pageElement} className="pdf-page" data-page-number={number} data-text-ready={textReady} data-text-scale={textReady ? scale : undefined}
       style={{ width: size.width * scale, height: size.height * scale, '--scale-factor': scale, '--total-scale-factor': scale, '--user-unit': 1 } as CSSProperties}>
       <PdfCanvas pdf={pdf} number={number} size={size} scale={scale} dpr={dpr} near={near} retry={retry} scrollRoot={scrollRoot} pageElement={pageElement} onError={setError} />
@@ -102,8 +104,8 @@ export function PdfPage({ pdf, number, size, scale, dpr, autoColumns, scrollRoot
         pageElement={pageElement} textHost={textHost} scrollRoot={scrollRoot} ready={textReady} near={near} scale={scale} />
       <div ref={textHost} className="text-host" />
       <PdfLinkLayer pdf={pdf} number={number} visited={visited} pageElement={pageElement} onLink={onNativeLink} />
-      {error && <div className="page-error">{error}<button onClick={() => { setError(''); setRetry(value => value + 1); }}>重试</button></div>}
-      {empty && textReady && <div className="scan-notice">此页没有可选文本；扫描件的 OCR 将在后续版本支持。</div>}
+      {error && <div className="page-error">{display(error)}<button onClick={() => { setError(''); setRetry(value => value + 1); }}>{t("重试")}</button></div>}
+      {empty && textReady && <div className="scan-notice">{t("此页没有可选文本；扫描件的 OCR 将在后续版本支持。")}</div>}
     </div>
   </section>;
 }
