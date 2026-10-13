@@ -106,6 +106,37 @@ test('failed first save and live settings save keep their prior state and retry 
   await expect(page.getByRole('tab', { name: '常规', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
+for (const initial of ['en', 'zh-CN'] as const) {
+  test(`relocalizes cached authored sample fetch failures from ${initial} without translating raw details`, async () => {
+    await confirm(initial);
+    // Chromium routing does not intercept local file: fetches; provide the failing response at the fetch boundary.
+    await page.evaluate(() => {
+      const fetch = window.fetch.bind(window);
+      window.fetch = (input, init) => String(input).endsWith('/examples/reading-demo.pdf')
+        ? Promise.resolve(new Response('unavailable', { status: 503 })) : fetch(input, init);
+    });
+    const notice = page.locator('.workspace-notice[role="alert"] span');
+    await page.getByRole('button', { name: initial === 'en' ? 'Try the two-column sample' : '体验双栏示例', exact: true }).click();
+    await expect(notice).toHaveText(initial === 'en' ? 'Could not open file: Sample file not found' : '无法打开文件：示例文件不存在');
+    const next = initial === 'en' ? 'zh-CN' : 'en';
+    await settings(initial); await switchLanguage(next, initial);
+    await page.getByRole('button', { name: next === 'en' ? 'Close settings' : '关闭设置', exact: true }).click();
+    await expect(notice).toHaveText(next === 'en' ? 'Could not open file: Sample file not found' : '无法打开文件：示例文件不存在');
+
+    // An unmarked upstream error can coincide with a catalog value; its original bytes must remain intact.
+    await page.evaluate(() => {
+      const fetch = window.fetch.bind(window);
+      window.fetch = (input, init) => String(input).endsWith('/examples/reading-demo.pdf')
+        ? Promise.reject(new Error('Sample file not found')) : fetch(input, init);
+    });
+    await page.getByRole('button', { name: next === 'en' ? 'Try the two-column sample' : '体验双栏示例', exact: true }).click();
+    await expect(notice).toHaveText(next === 'en' ? 'Could not open file: Sample file not found' : '无法打开文件：Sample file not found');
+    await settings(next); await switchLanguage(initial, next);
+    await page.getByRole('button', { name: initial === 'en' ? 'Close settings' : '关闭设置', exact: true }).click();
+    await expect(notice).toHaveText(initial === 'en' ? 'Could not open file: Sample file not found' : '无法打开文件：Sample file not found');
+  });
+}
+
 test('switches live reading, selection, history, search, notes and streaming AI without losing drafts or changing requests', async () => {
   await confirm('zh-CN');
   const paper = path.join(profile, 'user-论文.pdf'); await copyFile(path.join(root, 'tests/fixtures/navigation.pdf'), paper);

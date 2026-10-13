@@ -1,5 +1,5 @@
 import { uiMessage } from '../../electron/i18n-renderer';
-import { translateBackendMessage } from '../../electron/i18n';
+import { appError, backendErrorMessage, translateBackendMessage } from '../../electron/i18n';
 import { useLanguage } from '../i18n/LanguageProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
@@ -13,7 +13,7 @@ import { LibraryPanel } from './LibraryPanel';
 import { ResourceCache, type PdfResource } from './resources';
 import './workspace.css';
 
-const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+const message = (reason: unknown) => backendErrorMessage(reason).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 const defaultView: ReadingView = { page: 1, anchorY: 0, anchorX: 0, zoom: 'fit', panelOpen: true, panelTab: 'selection' };
 type Current = { id: string; resource: PdfResource; view: ReadingView; epoch: number };
 export function Workspace() {
@@ -249,7 +249,7 @@ export function Workspace() {
     {notice && <div className="workspace-notice" role="alert"><span>{display(notice)}</span><button aria-label={t("关闭错误提示")} onClick={() => setNotice('')}><X size={16} /></button></div>}
     <div className="workspace-reader-host" data-reader-id={current?.id} data-reader-generation={current?.epoch}><Reader key={current ? `${current.id}/${current.resource.pdf.loadingTask.docId}/${current.epoch}` : `empty/${library.activeId ?? ''}`} managed handle={reader} resource={current?.resource} initialView={current?.view} initialSearch={current ? searches.current.get(current.id) : undefined}
       initialNavigation={current && snapshots.current.get(current.id)?.documentId === current.resource.documentId ? snapshots.current.get(current.id)?.navigation : undefined}
-      onOpen={open} onOpenData={openData} onRecent={id => readRequest(() => bridge.openRecent(id))} onSample={() => readRequest(async () => { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw new Error(t("示例文件不存在")); return { name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }; })}
+      onOpen={open} onOpenData={openData} onRecent={id => readRequest(() => bridge.openRecent(id))} onSample={() => readRequest(async () => { const response = await fetch(`${import.meta.env.BASE_URL}examples/reading-demo.pdf`); if (!response.ok) throw appError('示例文件不存在'); return { name: 'Aurelia · 双栏阅读示例.pdf', bytes: new Uint8Array(await response.arrayBuffer()) }; })}
       onDrop={async files => { const ticket = ++generation.current; cancelPending(); setLoading(false); await imports(await bridge.importDroppedPapers(files, selectedGroup ?? undefined), ticket); }} onView={recordView} navigation={sidebar} onPagesNavigation={setPagesNavigation} libraryWidth={library.mode === 'sidebar' && !pagesNavigation ? effectiveWidth : 0} />
       {(loading || activeError) && <div className="workspace-load-state" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }}>{loading ? <><LoaderCircle className="spin" size={24} /><strong>{t("正在打开论文")}</strong><button onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开论文。可以重新打开或切换其他论文。' })); }}>{t("取消打开")}</button></> : <div role="alert"><strong>{display(activeError!)}</strong><div><button onClick={() => { void activate(library.activeId!); }}>{t("重新打开")}</button><button onClick={() => { void relocate(library.activeId!); }}>{t("重新定位")}</button></div></div>}</div>}
       {passwordPrompt && <form className="workspace-password" style={{ left: library.mode === 'sidebar' ? effectiveWidth : 0 }} onSubmit={event => { event.preventDefault(); passwordCallback.current?.(password); setPasswordPrompt(''); }}><strong>{display(passwordPrompt)}</strong><input autoFocus type="password" aria-label={t("PDF 密码")} value={password} onChange={event => setPassword(event.target.value)} /><div><button type="button" onClick={() => { generation.current++; cancelPending(); setLoading(false); if (library.activeId) setErrors(old => ({ ...old, [library.activeId!]: '已取消打开加密论文。' })); }}>{t("取消密码")}</button><button type="submit">{t("解锁 PDF")}</button></div></form>}

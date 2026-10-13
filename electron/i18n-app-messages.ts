@@ -1,5 +1,6 @@
 /** Application-authored errors, native menu labels and dialog labels only. */
 export const appMessages = {
+  '示例文件不存在': 'Sample file not found',
   '请在 Aurelia 桌面程序中配置和使用 AI。': 'Configure and use AI in the Aurelia desktop app.',
   '请使用 Aurelia 桌面程序。': 'Use the Aurelia desktop app.',
   '阅读记录保存失败。': 'Could not save reading history.',
