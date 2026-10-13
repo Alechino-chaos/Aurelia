@@ -2,10 +2,12 @@ import { MessageSquare } from 'lucide-react';
 import type { Annotation } from '../../electron/session-types';
 import type { PageSize } from '../types';
 import { mergeHighlightRegions } from '../pdf/highlightGeometry';
+import { useLanguage } from '../i18n/LanguageProvider';
 
 export function AnnotationLayer({ annotations, page, size, activeId, onSelect }: {
   annotations: Annotation[]; page: number; size: PageSize; activeId: string | null; onSelect: (id: string) => void;
 }) {
+  const { t } = useLanguage();
   const entries = annotations.filter(a => a.regions.some(r => r.page === page));
   // Margin markers remain clickable; the rectangles never intercept text drags.
   const occupied: number[] = [];
@@ -20,7 +22,7 @@ export function AnnotationLayer({ annotations, page, size, activeId, onSelect }:
       occupied.push(first.y);
       return <button key={a.id} type="button" className={`annotation-marker ${a.color} ${a.id === activeId ? 'active' : ''}`}
         data-annotation-id={a.id} style={{ top: `min(calc(${first.y * 100}% + ${lane * 24}px), calc(100% - 24px))`, left: 3 }}
-        aria-label={`查看批注：${a.quote.text.slice(0, 40)}`} title={a.note || a.quote.text}
+        aria-label={t('viewAnnotation', { quote: a.quote.text.slice(0, 40) })} title={a.note || a.quote.text}
         onClick={() => onSelect(a.id)}><MessageSquare size={14} /></button>;
     })}</div>
   </>;

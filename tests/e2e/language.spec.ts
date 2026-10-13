@@ -55,6 +55,41 @@ test('normal close before confirmation leaves choice pending and saves Chinese o
   expect(JSON.parse(await readFile(path.join(profile, 'app-settings.json'), 'utf8'))).toEqual({ locale: 'zh-CN' });
 });
 
+test('localizes existing annotation marker names while keeping raw quotes, titles and reader identity', async () => {
+  await confirm('en');
+  const paper = path.join(profile, 'raw-论文.pdf'); await copyFile(path.join(root, 'tests/fixtures/navigation.pdf'), paper);
+  await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, paper);
+  await page.getByRole('button', { name: 'Open PDF', exact: true }).click();
+  await expect(page.locator('[data-page-number="1"]')).toHaveAttribute('data-text-ready', 'true');
+  const quote = '原文 raw {quote} 未翻译', otherQuote = 'second 原文 {title}', note = '我的笔记 raw {name}';
+  await page.evaluate(async ({ quote, otherQuote, note }) => {
+    const library = await window.paperdesk!.getLibrary(), paper = library.entries.find(entry => entry.id === library.activeId)!;
+    await window.paperdesk!.loadReadingSession(paper.documentId!, paper.name);
+    for (const [index, text] of [quote, otherQuote].entries()) {
+      await window.paperdesk!.updateReadingSession(paper.documentId!, { type: 'annotation-add', entry: {
+        id: `existing-marker-${index}`, createdAt: 1, updatedAt: 1, color: 'yellow',
+        quote: { text, fileName: paper.name, pages: [1] }, note: index === 0 ? note : '',
+        regions: [{ page: 1, x: .15, y: .2 + index * .1, width: .3, height: .03 }],
+      } });
+    }
+  }, { quote, otherQuote, note });
+  // Restart restores real persisted annotations rather than only a transient component fixture.
+  await app.close(); await launch();
+  const markers = page.locator('[data-page-number="1"] .annotation-marker');
+  await expect(markers).toHaveCount(2);
+  const reader = await page.locator('.workspace-reader-host').getAttribute('data-reader-generation');
+  const document = await page.locator('[data-document-id]').getAttribute('data-document-id');
+  for (const locale of ['en', 'zh-CN', 'en'] as const) {
+    if (locale === 'zh-CN') { await settings('en'); await switchLanguage('zh-CN', 'en'); await page.getByRole('button', { name: '关闭设置' }).click(); }
+    else if (await page.locator('html').getAttribute('lang') === 'zh-CN') { await settings('zh-CN'); await switchLanguage('en', 'zh-CN'); await page.getByRole('button', { name: 'Close settings' }).click(); }
+    await expect(markers.nth(0)).toHaveAttribute('aria-label', locale === 'en' ? `View annotation: ${quote}` : `查看批注：${quote}`);
+    await expect(markers.nth(1)).toHaveAttribute('aria-label', locale === 'en' ? `View annotation: ${otherQuote}` : `查看批注：${otherQuote}`);
+    await expect(markers.nth(0)).toHaveAttribute('title', note); await expect(markers.nth(1)).toHaveAttribute('title', otherQuote);
+    expect(await page.locator('.workspace-reader-host').getAttribute('data-reader-generation')).toBe(reader);
+    expect(await page.locator('[data-document-id]').getAttribute('data-document-id')).toBe(document);
+  }
+});
+
 test('asks an existing populated profile once and preserves its independent AI settings and groups', async () => {
   await confirm('zh-CN');
   await page.evaluate(async () => {
