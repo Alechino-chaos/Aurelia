@@ -34,6 +34,8 @@ Support native named navigation actions GoBack, GoForward, NextPage, PrevPage, F
 
 For normal external HTTP(S) links (for example a DOI), explicit clicks open the system browser. A narrow trusted-main-frame IPC validates the URL again in the main process; reject credentials, control characters, non-HTTP(S) schemes and URLs longer than 8192 characters. No automatic fetching/opening on load, hover or history restore; no file/mailto/custom protocol execution. Browser preview fallback may use a noopener/noreferrer window for the same validated URLs. External links do not change document history.
 
+The security boundary is PDF.js's normalized metadata. PDF.js may recover a URL from an original PDF action and omit that action's discriminator; a validated recovered HTTP(S) URL is treated as an ordinary external link on explicit click. Aurelia never executes the original action code or parses raw PDF actions to reconstruct provenance. A retained unsupported action is reported as unsupported; URL fragments or newWindow alone are not grounds to reject an otherwise valid web link.
+
 ## Implementation shape
 
 Keep Electron + React + TypeScript + existing PDF.js; add no dependencies. PDF.js supplies native annotation/outline/destination metadata; Aurelia owns its viewport and history rather than replacing the reader with the bundled PDF.js viewer.
