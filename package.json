@@ -1,6 +1,6 @@
 {
   "name": "aurelia",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "private": true,
   "description": "A local-first academic PDF reader",
   "type": "module",
@@ -16,6 +16,7 @@
     "dist": "npm run build && node scripts/run-tool.mjs scripts/dist.mjs"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "katex": "^0.19.0",
     "lucide-react": "^0.468.0",
     "pdfjs-dist": "^6.2.108",
@@ -56,12 +57,35 @@
       "package.json"
     ],
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "public/branding/aurelia.ico",
       "signExecutable": false
     },
-    "portable": {
-      "artifactName": "Aurelia-${version}-portable.exe"
+    "publish": {
+      "provider": "github",
+      "owner": "Alechino-chaos",
+      "repo": "Aurelia",
+      "releaseType": "release"
+    },
+    "nsis": {
+      "guid": "8e3b71f6-b014-4f5d-83d9-ea8146edc067",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": true,
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "language": "1033",
+      "include": "build/installer.nsh",
+      "artifactName": "Aurelia-${version}-setup.exe",
+      "runAfterFinish": true,
+      "differentialPackage": true
     }
   }
 }

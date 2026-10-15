@@ -1,5 +1,11 @@
 /** Application-authored errors, native menu labels and dialog labels only. */
 export const appMessages = {
+  '正在保存并关闭，请稍候。': 'Saving before closing. Please wait.',
+  '正在准备更新，请等待保存完成。': 'Preparing the update. Wait for saving to finish.',
+  '停止 AI 并更新？': 'Stop AI and update?',
+  'AI 正在生成。更新前需要停止生成并保存已接收的内容。': 'AI is generating. Stop generation and save the received content before updating.',
+  '停止生成并更新': 'Stop generation and update',
+  '继续阅读': 'Continue reading',
   '示例文件不存在': 'Sample file not found',
   '请在 Aurelia 桌面程序中配置和使用 AI。': 'Configure and use AI in the Aurelia desktop app.',
   '请使用 Aurelia 桌面程序。': 'Use the Aurelia desktop app.',

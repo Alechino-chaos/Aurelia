@@ -3,8 +3,28 @@ import type { AiEvent, AiRequest, AiSettingsInput } from './ai-types.js';
 import type { SessionAction, SessionSaveEvent } from './session-types.js';
 import type { LibraryAction } from './library-types.js';
 import type { UiLocale } from './i18n.js';
+import type { UpdateState } from './update-types.js';
 
 contextBridge.exposeInMainWorld('paperdesk', {
+  getClosingState: () => ipcRenderer.invoke('app:get-closing'),
+  onClosingState: (callback: (closing: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, closing: boolean) => callback(closing);
+    ipcRenderer.on('app:closing', listener);
+    return () => ipcRenderer.removeListener('app:closing', listener);
+  },
+  getUpdateState: () => ipcRenderer.invoke('update:get-state'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  cancelUpdateDownload: () => ipcRenderer.invoke('update:cancel'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  setAutoCheckUpdates: (enabled: boolean) => ipcRenderer.invoke('update:set-auto-check', enabled),
+  updaterReady: () => ipcRenderer.invoke('update:ready'),
+  openUpdateReleasePage: () => ipcRenderer.invoke('update:release-page'),
+  onUpdateState: (callback: (state: UpdateState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state);
+    ipcRenderer.on('update:state', listener);
+    return () => ipcRenderer.removeListener('update:state', listener);
+  },
   getAppSettings: () => ipcRenderer.invoke('app:get-settings'),
   saveAppSettings: (input: { locale: UiLocale }) => ipcRenderer.invoke('app:save-settings', input),
   openPdf: () => ipcRenderer.invoke('pdf:open'),

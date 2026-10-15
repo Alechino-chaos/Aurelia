@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cancelAi, cancelAllAi, getAiSettings, loadAiSettings, runAi, saveAiSettings } from './ai-service.js';
+import { cancelAi, cancelAllAi, cancelAllAiAndWait, hasActiveAi, flushAiSettings, getAiSettings, loadAiSettings, runAi, saveAiSettings } from './ai-service.js';
 import { SessionStore } from './session-store.js';
 import { validateRequest } from './ai-protocol.js';
 import { exportNotes } from './notes-export.js';
@@ -15,12 +15,17 @@ import { LibraryStore } from './library-store.js';
 import { LibraryFiles } from './library-files.js';
 import { applyLibraryAction } from './library-model.js';
 import type { LibraryAction } from './library-types.js';
+import { UpdateService } from './update-service.js';
+import { UpdatePreferencesStore } from './update-preferences.js';
+import { createUpdateDriver, isUpdateTestBuild, preserveUpdateTestProfile, registeredInstallDirectory } from './update-runtime.js';
+import { UPDATE_RELEASE_PAGE } from './update-policy.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 app.setName('Aurelia');
 // Keep the original profile so renaming the app preserves reading history and settings.
 // Explicit profiles (including packaged smoke tests) must remain isolated.
 if (!app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', path.join(app.getPath('appData'), 'paperdesk'));
+preserveUpdateTestProfile();
 if (process.platform === 'win32') app.setAppUserModelId('com.aurelia.reader');
 const developmentUrl = !app.isPackaged ? process.env.PAPERDESK_DEV_URL : undefined;
 if (process.env.PAPERDESK_TEST_DIR && !app.isPackaged) app.setPath('userData', process.env.PAPERDESK_TEST_DIR);
@@ -39,6 +44,63 @@ const sessions = new SessionStore(path.join(app.getPath('userData'), 'reading-se
 const library = new LibraryStore(app.getPath('userData'));
 const libraryFiles = new LibraryFiles(library);
 let appSettings: AppSettingsStore;
+let updatePreparing = false, updateExitReady = false;
+let ordinaryClosing = false, updateInstallRequests = 0;
+let rendererUpdateReady = false;
+const pendingOperations = new Set<Promise<unknown>>();
+const mutationChannels = new Set(['app:save-settings', 'ai:save-settings', 'ai:start', 'session:update', 'session:suspend',
+  'session:export-notes', 'pdf:open', 'pdf:open-recent', 'pdf:open-drop', 'library:update', 'library:import',
+  'library:import-drop', 'library:open', 'library:relocate', 'library:accept-relocation-import', 'update:set-auto-check']);
+async function settlePendingOperations() {
+  while (pendingOperations.size) await Promise.all([...pendingOperations]);
+}
+let updater: Promise<UpdateService> | undefined;
+let updateTimer: ReturnType<typeof setTimeout> | undefined;
+function getUpdater(): Promise<UpdateService> {
+  return updater ??= (async () => {
+    const testBuild = isUpdateTestBuild(), directory = await registeredInstallDirectory(testBuild);
+    const preferences = new UpdatePreferencesStore(app.getPath('userData'));
+    let preferenceError = false;
+    const saved = await preferences.load().catch(() => { preferenceError = true; return { autoCheck: true, lastCheckedAt: null }; });
+    const service = new UpdateService({ currentVersion: app.getVersion(), supported: !!directory, preferences: saved,
+      savePreferences: value => preferences.save(value),
+      notify: state => { if (window && !window.webContents.isDestroyed()) window.webContents.send('update:state', state); },
+      driver: createUpdateDriver({ installDirectory: directory ?? '', testBuild, onInstallStarted: () => { updateExitReady = true; } }),
+      shutdown: {
+        hasActiveAi,
+        confirmStopAi: async () => {
+          if (!window || window.isDestroyed()) return false;
+          const result = await dialog.showMessageBox(window, { type: 'question', title: appMessage('停止 AI 并更新？'),
+            message: appMessage('AI 正在生成。更新前需要停止生成并保存已接收的内容。'),
+            buttons: [appMessage('停止生成并更新'), appMessage('继续阅读')], defaultId: 1, cancelId: 1 });
+          return result.response === 0;
+        },
+        freeze: () => { updatePreparing = true; }, stopAi: cancelAllAiAndWait,
+        capture: async () => {
+          if (!window || window.isDestroyed() || !closeCaptureEnabled) throw new Error('Reading capture unavailable');
+          await settlePendingOperations(); await captureBeforeClose(window);
+        },
+        persist: async () => { await settlePendingOperations(); await Promise.all([sessions.close(), library.flush(), appSettings.flush(), flushAiSettings(), preferences.flush()]); },
+        resume: () => { updatePreparing = false; updateExitReady = false; },
+      },
+    });
+    if (ordinaryClosing) service.pauseChecks();
+    if (preferenceError) await service.setAutoCheck(saved.autoCheck);
+    return service;
+  })();
+}
+async function scheduleAutomaticUpdateCheck() {
+  if (!rendererUpdateReady || updatePreparing || ordinaryClosing || updateTimer) return;
+  const settings = await appSettings.get();
+  if (!settings.locale) return;
+  updateTimer = setTimeout(() => {
+    updateTimer = undefined;
+    if (!rendererUpdateReady || updatePreparing || ordinaryClosing) return;
+    void getUpdater().then(service => service.check(false)).catch(() => {});
+  }, 10_000);
+  updateTimer.unref();
+}
+async function flushInitializedUpdater() { if (updater) await (await updater).flush(); }
 let closeCaptureEnabled = false;
 let pendingCloseCapture: { token: string; complete: (error?: string) => void } | undefined;
 async function captureBeforeClose(target: BrowserWindow) {
@@ -81,12 +143,27 @@ function handle(channel: string, callback: (...args: any[]) => unknown) {
     if (!url || !trustedUrl || event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame) {
       throw appError('不支持的请求来源。');
     }
+    const captureWrite = channel === 'library:update' && args[0]?.type === 'view' || channel === 'session:suspend';
+    if (ordinaryClosing && (mutationChannels.has(channel) || ['update:check', 'update:download', 'update:install'].includes(channel))
+      && !(captureWrite && pendingCloseCapture)) throw appError('正在保存并关闭，请稍候。');
+    if (updatePreparing && mutationChannels.has(channel) && !captureWrite) throw appError('正在准备更新，请等待保存完成。');
+    if (channel === 'update:install') updateInstallRequests++;
     // Electron strips custom Error fields. Encode only errors with application provenance.
-    return Promise.resolve().then(() => callback(...args)).catch(error => { throw new Error(backendErrorMessage(error)); });
+    const operation = Promise.resolve().then(() => {
+      if (updatePreparing && mutationChannels.has(channel) && !captureWrite) throw appError('正在准备更新，请等待保存完成。');
+      return callback(...args);
+    }).catch(error => { throw new Error(backendErrorMessage(error)); });
+    if (mutationChannels.has(channel)) {
+      pendingOperations.add(operation);
+      void operation.then(() => pendingOperations.delete(operation), () => pendingOperations.delete(operation));
+    }
+    if (channel === 'update:install') void operation.then(() => { updateInstallRequests--; }, () => { updateInstallRequests--; });
+    return operation;
   });
 }
 
 function createWindow() {
+  rendererUpdateReady = false;
   window = new BrowserWindow({
     width: 1440, height: 940, minWidth: 960, minHeight: 640,
     title: 'Aurelia', backgroundColor: '#f6f5f1', show: false,
@@ -103,26 +180,42 @@ function createWindow() {
   window.webContents.setVisualZoomLevelLimits(1, 1);
   if (developmentUrl) void window.loadURL(developmentUrl);
   else void window.loadFile(path.join(here, '../dist/index.html'));
-  window.webContents.on('render-process-gone', cancelAllAi);
-  window.webContents.on('did-start-loading', cancelAllAi);
+  const resetRendererUpdateReadiness = () => {
+    rendererUpdateReady = false;
+    if (updateTimer) clearTimeout(updateTimer);
+    updateTimer = undefined;
+    cancelAllAi();
+  };
+  window.webContents.on('render-process-gone', resetRendererUpdateReadiness);
+  window.webContents.on('did-start-loading', resetRendererUpdateReadiness);
+  window.on('focus', () => { void scheduleAutomaticUpdateCheck().catch(() => {}); });
   const target = window;
   let closing = false, canClose = false;
   target.on('close', event => {
-    if (canClose) return;
+    if (canClose || updateExitReady) return;
     event.preventDefault();
+    if (updatePreparing || updateInstallRequests) return;
     if (closing) return;
     closing = true;
-    cancelAllAi();
-    void captureBeforeClose(target).then(() => Promise.all([sessions.close(), library.flush()])).then(() => { canClose = true; target.close(); }).catch(async () => {
+    ordinaryClosing = true;
+    target.webContents.send('app:closing', true);
+    if (updateTimer) clearTimeout(updateTimer);
+    updateTimer = undefined;
+    void Promise.resolve(updater?.then(service => service.pauseChecks()))
+      .then(() => cancelAllAiAndWait()).then(() => captureBeforeClose(target)).then(() => settlePendingOperations())
+      .then(() => Promise.all([sessions.close(), library.flush(), appSettings.flush(), flushAiSettings(), flushInitializedUpdater()])).then(() => { canClose = true; target.close(); }).catch(async () => {
       const result = await dialog.showMessageBox(target, { type: 'warning', title: appMessage('阅读记录尚未保存'),
         message: appMessage('阅读记录或论文库未能写入本机。'), detail: appMessage('请检查磁盘空间或目录权限。继续关闭可能丢失最近的内容和阅读位置。'),
         buttons: [appMessage('重试保存'), appMessage('取消关闭'), appMessage('仍然关闭')], defaultId: 0, cancelId: 1 });
       closing = false;
+      ordinaryClosing = false;
+      if (updater) (await updater).resumeChecks();
+      target.webContents.send('app:closing', false);
       if (result.response === 0) target.close();
       else if (result.response === 2) { canClose = true; target.close(); }
     });
   });
-  window.on('closed', () => { cancelAllAi(); closeCaptureEnabled = false; pendingCloseCapture?.complete(appMessage('窗口已经关闭。')); window = null; });
+  window.on('closed', () => { resetRendererUpdateReadiness(); closeCaptureEnabled = false; pendingCloseCapture?.complete(appMessage('窗口已经关闭。')); window = null; });
   refreshApplicationMenu();
 }
 
@@ -157,12 +250,21 @@ try {
 await library.load(recent).catch(() => {});
 
 handle('app:get-settings', () => appSettings.load());
+handle('app:get-closing', () => ordinaryClosing);
 handle('app:save-settings', async (input: Parameters<AppSettingsStore['save']>[0]) => {
   const settings = await appSettings.save(input);
   setUiLocale(settings.locale!);
   refreshApplicationMenu();
   return settings;
 });
+handle('update:get-state', async () => (await getUpdater()).getState());
+handle('update:check', async () => (await getUpdater()).check(true));
+handle('update:download', async () => (await getUpdater()).download());
+handle('update:cancel', async () => (await getUpdater()).cancelDownload());
+handle('update:install', async () => (await getUpdater()).install());
+handle('update:set-auto-check', async (input: unknown) => (await getUpdater()).setAutoCheck(input));
+handle('update:ready', () => { rendererUpdateReady = true; return scheduleAutomaticUpdateCheck(); });
+handle('update:release-page', () => shell.openExternal(UPDATE_RELEASE_PAGE));
 
 handle('pdf:open', async () => {
   const result = await dialog.showOpenDialog(window!, { title: appMessage('打开学术论文'), filters: [{ name: appMessage('PDF 文档'), extensions: ['pdf'] }], properties: ['openFile'] });
@@ -251,4 +353,5 @@ handle('ai:start', (request: unknown, documentId?: string) => {
 createWindow();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', () => { if (updateTimer) clearTimeout(updateTimer); updateTimer = undefined; });
 app.on('activate', () => { if (primaryInstance && BrowserWindow.getAllWindows().length === 0) createWindow(); });

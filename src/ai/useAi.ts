@@ -13,8 +13,8 @@ export function quoteContent(content: string, quote?: Quote) {
 export function useAi(documentId: string | null, fileName: string, instance?: string) {
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<'general' | 'ai'>('general');
-  function openSettings(section: 'general' | 'ai' = 'general') { setSettingsSection(section); setSettingsOpen(true); }
+  const [settingsSection, setSettingsSection] = useState<'general' | 'ai' | 'updates'>('general');
+  function openSettings(section: 'general' | 'ai' | 'updates' = 'general') { setSettingsSection(section); setSettingsOpen(true); }
   const [settingsError, setSettingsError] = useState('');
   const [session, setSession] = useState<ReadingSession | null>(null);
   const sessionRef = useRef<ReadingSession | null>(null);

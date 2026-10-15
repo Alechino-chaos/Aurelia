@@ -77,9 +77,13 @@ On first launch, choose **English** or **简体中文** and confirm before enter
 
 Change the interface at any time in **Settings → General → Interface language**. Saving takes effect immediately and preserves your open paper, reading position, zoom, navigation, search, notes, AI response and unsaved AI settings. The choice belongs to your local profile and is retained across restarts and version updates. You do not need an AI connection to save it.
 
-### <img src="docs/images/icons/inline/download.svg" width="18" height="18" alt="" /> Use a portable build
+### <img src="docs/images/icons/inline/download.svg" width="18" height="18" alt="" /> Install Aurelia
 
-If you already have `Aurelia-<version>-portable.exe`, double-click it to launch. Node.js is not required. To build your own portable executable, see [Packaging and local installation](docs/development.md#packaging-and-local-installation).
+Download `Aurelia-1.0.0-setup.exe` from the [latest release](https://github.com/Alechino-chaos/Aurelia/releases/latest). Choose **Install** for the default location or **Custom installation** to select a folder and desktop shortcut. Node.js is not required. The full Windows x64 installer works offline after downloading. The accompanying `latest.yml` and `.blockmap` files are used by the in-app updater; you only need to run the setup executable.
+
+Open **Settings → About & updates** to check for a newer stable version. Aurelia can check automatically, but downloads begin only when you click **Download update**. After downloading, choose **Restart and update** when ready; closing the app normally does not install an update. Automatic checks can be disabled in General settings.
+
+Existing portable users must download and run the first installer once, then use the new shortcut. Under the same Windows account, your language, library, reading progress, annotations and AI settings remain in the existing local profile. Original PDFs stay where you put them. The old portable executable is not removed automatically. See [Packaging and local installation](docs/development.md#packaging-and-local-installation) for builds and release maintenance.
 
 ### <img src="docs/images/icons/inline/bookmark.svg" width="18" height="18" alt="" /> Settle into a paper
 

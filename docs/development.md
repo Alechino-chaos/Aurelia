@@ -45,7 +45,9 @@ The built-in PDF is synthetic and can be regenerated with `node scripts/create-f
 npm run dist
 ```
 
-The Windows portable executable is written to `release/Aurelia-<version>-portable.exe`. Build artifacts are excluded from Git and should be distributed separately as Release attachments. Release signing and automatic updates are not configured.
+The Windows x64 offline installer is written to `release/Aurelia-<version>-setup.exe`, alongside `latest.yml` and a `.blockmap`. The bilingual welcome page offers Install and Custom installation. Build artifacts are excluded from Git.
+
+Publish all three artifacts from the same build to a draft GitHub Release, verify the attachment set, then publish the stable release with English notes. Do not upload a separate `.sha256` file. Versions must increase strictly. The app uses the fixed public `Alechino-chaos/Aurelia` feed with no client credentials. Downloads and installation require separate user actions; automatic checks never download, and ordinary exit never installs. Code signing is not yet configured.
 
 To install locally and create a desktop shortcut, close the installed application normally, then run:
 
@@ -59,7 +61,15 @@ The default location for a first installation is `%LOCALAPPDATA%\Programs\Aureli
 ./scripts/install-local.ps1 -ApplicationRoot 'E:\Aurelia'
 ```
 
-The script copies the program into a new version directory, updates the desktop shortcut, and records the location in `.aurelia-install.local.json`. Later updates reuse that location. Old version directories are not automatically removed. Personal reading data does not move with the installation directory.
+The script runs the actual NSIS installer, reads its registered installation directory, verifies the executable and application archive, and records the location in `.aurelia-install.local.json`. Later updates retain that registered location and the shortcut preference. Previously delivered portable directories are not removed. Personal data remains in `%APPDATA%\paperdesk` and does not move with the installation directory.
+
+Portable users install the first setup version manually once. A failed download leaves the current application usable. During restart preparation, an overlay temporarily locks editing while the app saves; a save or launch failure restores interaction. Installation interrupted by a crash or power loss has no promised automatic rollback: rerun the official installer to repair program files, keeping the existing user data. The installer records its validated destination separately before replacing files and clears that recovery record after success. Repair may reuse this recorded directory; unrelated nonempty directories remain rejected.
+
+For isolated upgrade verification, `AURELIA_UPDATE_TEST_BUILD=<version>` creates a separately registered test installer under `release/upgrade-test-<version>`. Test installation directories, shortcuts and updater caches are separate from the production identity. Only those marked test builds accept a loopback `AURELIA_UPDATE_TEST_URL` and an isolated `AURELIA_UPDATE_TEST_PROFILE`. Without an explicit profile, they use a temporary profile derived from the installed executable directory, including after an installer restart. Production builds ignore these overrides. Never publish test packages.
+
+Build versions A and B, install A with its actual test installer, then run `node scripts/verify-installed-update.mjs <installed-test-exe> <B-artifacts-directory>`. The harness seeds synthetic papers, annotations and a dummy encrypted key, checks the manual download boundary, cancels and retries, proves ordinary exit does not install, and explicitly performs the NSIS upgrade. Evidence is saved under `release/verification/installer-<current-package-version>/upgrade-evidence.json`. After closing the restarted test application normally, pass that file to `node scripts/verify-upgrade-restart.mjs` to verify the actual running B, automatic test-profile isolation and restored state. Repeat with a fresh test installation at the default path and a custom Unicode path. Both scripts reject unmarked production packages.
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-installer-safety.ps1` for executable NSIS regression probes. They compile the production path and shortcut policy into disposable installers, use isolated directories and registry keys, and verify junction rejection and shortcut ownership without changing the real installation. Ordinary-close regressions are covered by `tests/unit/update-ipc.test.ts` and `tests/e2e/close.spec.ts`.
 
 Editing source code or running development mode does not update an installed copy. Rebuild and reinstall it to apply changes.
 

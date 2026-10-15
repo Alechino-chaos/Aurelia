@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.0 — 2026-10-15
+
+- Launch the first stable Windows installer release, with Install and Custom installation options, a configurable destination, and an optional desktop shortcut.
+- Add in-app stable update checks, manual download, progress, cancellation and retry, and an explicit Restart and update action. Ordinary exit never installs updates.
+- Preserve existing portable users' language, library, reading progress, annotations and AI settings when installing under the same Windows account.
+- Improve home-screen and right-sidebar typography for more comfortable reading.
+- Protect files outside the installation directory by rejecting linked or unreadable installation trees and inconsistent uninstall registration before removal.
+- Finish accepted saves before closing, prevent edits during shutdown, and restore interaction when a failed close is cancelled.
+- Honor desktop shortcut preferences on reinstall and preserve shortcuts repurposed for other applications.
+
+## 0.10.1 — 2026-10-15
+
+- Reject linked or unreadable installation trees before upgrades and uninstalls, protecting files outside the application directory.
+- Lock editing during normal shutdown, finish accepted saves, and restore interaction if closing is cancelled after a save failure.
+- Stop waiting for optional update network checks during shutdown while preserving already queued preference writes.
+- Apply desktop shortcut preferences during reinstall and preserve same-name shortcuts that point to another application.
+
+## 0.10.0 — 2026-10-13
+
+- Introduce a Windows installer with Install and Custom installation on the welcome screen, a configurable location, and an optional desktop shortcut.
+- Add About & updates in Settings, update notifications, download progress, cancellation, and explicit Restart and update.
+- Check stable official releases automatically or manually; downloads begin only on request and ordinary exit never installs an update.
+- Save reading state and settings before updating, preserve the existing local profile, and keep the app open if saving fails.
+- Temporarily lock editing while preparing an update, and support rerunning setup to repair an interrupted installation at its recorded location.
+- Provide Chinese and English update controls. Existing portable users install this version manually once to enable future in-app updates.
+
+## 0.9.6 — 2026-10-13
+
+- Improve right-sidebar readability with 14 px guidance, 16 px empty-state headings, clearer secondary text, and larger action labels while preserving the existing tab sizes and layout.
+
+## 0.9.5 — 2026-10-13
+
+- Improve readability on the Open a paper home screen with a larger heading, 16 px instructions and primary action, and clearer secondary text.
+
 ## 0.9.4 — 2026-10-13
 
 - Make paper-library group names larger and semibold for clearer hierarchy, while keeping paper counts visually secondary.

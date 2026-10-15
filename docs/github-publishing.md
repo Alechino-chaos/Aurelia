@@ -45,7 +45,9 @@ npm run dist
 
 ## 发布程序
 
-当前版本为 0.6.0。`release/Aurelia-0.6.0-portable.exe` 应作为 GitHub Release 附件上传，不放进 Git 提交。Release 标题和说明统一使用英文，只上传便携程序，不上传校验文件或添加校验说明。每次版本更新在打包完成后运行 `./scripts/install-local.ps1`，同步更新本机程序和桌面快捷方式，并验证实际安装版本。
+1.0.0 起公开分发 Windows 安装版。将同一次 `npm run dist` 生成的 `Aurelia-<version>-setup.exe`、`latest.yml` 和 `Aurelia-<version>-setup.exe.blockmap` 上传至 GitHub Release 草稿，核对版本、附件和目标提交后再发布为正式版本。标题和说明统一使用英文，不额外上传 `.sha256` 文件或加入手工校验说明。自动更新需要后两个文件；用户首次安装只需运行 setup 程序。
+
+每次版本更新在打包完成后运行 `./scripts/install-local.ps1`，同步更新本机程序和桌面快捷方式，并验证实际运行版本与打包文件一致。旧便携版用户先手动安装一次，之后可在软件里检查更新、手动下载并点击重启更新。源码、版本标签和 Release 是独立对象；删除旧 Release 不要求删除对应标签或提交历史。
 
 ## 已有仓库的日常更新
 

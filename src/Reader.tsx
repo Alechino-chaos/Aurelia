@@ -12,6 +12,8 @@ import type { PdfResource } from './workspace/resources';
 import { useAi } from './ai/useAi';
 import { AiPanel } from './components/AiPanel';
 import { SettingsDialog } from './components/SettingsDialog';
+import { useUpdates } from './updates/UpdateProvider';
+import { updateMessages } from './updates/messages';
 import { AnnotationsPanel } from './components/AnnotationsPanel';
 import type { Annotation } from '../electron/session-types';
 import { usePdfSearch, type SearchMemory } from './search/usePdfSearch';
@@ -67,6 +69,8 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
   const [panelOpen, setPanelOpen] = useState(initialView?.panelOpen ?? true);
   const [panelTab, setPanelTab] = useState<'selection' | 'translation' | 'chat' | 'annotations'>(initialView?.panelTab ?? 'selection');
   const ai = useAi(documentKey, fileName, pdf?.loadingTask.docId);
+  const updates = useUpdates();
+  useEffect(() => updates.registerOpener(() => ai.openSettings('updates')), [updates.registerOpener, ai.openSettings]);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [annotationEditRequest, setAnnotationEditRequest] = useState(0);
   const [highlightColor, setHighlightColor] = useState<Annotation['color']>('yellow');
@@ -539,6 +543,7 @@ export default function Reader({ resource, initialView, initialSearch, initialNa
     <header className="titlebar">
       <div className="brand"><img className="brand-icon" src={`${import.meta.env.BASE_URL}branding/aurelia-32.png`} alt="" /><span>Aurelia</span></div>
       <span className="window-caption">{t("你的论文阅读工作台")}</span>
+      {toolbarHidden && <button className="update-about-entry" onClick={() => ai.openSettings('updates')}><Settings size={14} />{updateMessages(locale).text('about')}</button>}
       {toolbarHidden && <button ref={showToolbarButton} className="toolbar-restore" aria-label={t('显示顶部工具栏')} onClick={toggleToolbar}><PanelTopOpen size={15} />{t('显示顶部工具栏')}</button>}
     </header>
     <div className="workspace-toolbar" hidden={toolbarHidden}>

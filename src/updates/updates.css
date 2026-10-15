@@ -1,0 +1,45 @@
+.update-toast { position: fixed; top: 144px; right: 22px; z-index: 75; width: min(360px, calc(100vw - 32px)); padding: 18px; border: 1px solid #bfccb9; border-radius: 8px; background: var(--paper, #fafbf7); box-shadow: 0 8px 26px #2733241f; color: var(--ink, #2c3527); font-size: 15px; line-height: 1.5; }
+.update-toast-message { display: flex; gap: 12px; align-items: flex-start; }
+.update-toast-message svg { color: var(--accent); margin-top: 2px; }
+.update-toast-message strong, .update-toast-message span span { display: block; }
+.update-toast-message span span { color: var(--muted); margin-top: 3px; }
+.update-toast-actions { display: flex; gap: 14px; margin: 14px 0 0 33px; }
+.update-toast-actions button:first-child { color: var(--accent); font-weight: 600; }
+.settings-dialog { width: min(570px, calc(100vw - 32px)); }
+.settings-dialog .settings-tabs { flex-wrap: wrap; gap: 4px; }
+.settings-dialog .settings-tabs button { font-size: 15px; padding: 8px 12px; }
+.update-page { padding-top: 24px; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.update-brand { display: flex; gap: 16px; align-items: center; margin-bottom: 22px; }
+.update-brand img { width: 58px; height: 58px; object-fit: contain; }
+.update-brand h3 { margin: 0; font-size: 23px; font-weight: 650; letter-spacing: -.5px; }
+.update-brand p { margin: 3px 0 0; color: var(--muted); }
+.update-details { margin: 0 0 22px; }
+.update-details div { display: flex; justify-content: space-between; gap: 20px; margin: 6px 0; }
+.update-details dt { color: var(--muted); }
+.update-details dd { margin: 0; text-align: right; }
+.update-status { display: flex; align-items: center; gap: 10px; color: var(--accent); font-weight: 600; }
+.update-help { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+.update-error { padding: 12px 14px; background: #fcf1e8; border-left: 3px solid #be8965; color: #704b34; margin-top: 14px; font-size: 15px; }
+.update-error p { margin: 0; }
+.update-error button { margin-top: 8px; padding: 4px 0; text-decoration: underline; }
+.update-release { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }
+.update-release h4 { margin: 0 0 10px; font-size: 16px; font-weight: 600; }
+.update-release-notes { white-space: pre-wrap; font-size: 15px; max-height: 200px; overflow-y: auto; overflow-wrap: anywhere; margin: 0; user-select: text; }
+.update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 24px; }
+.update-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 12px; border-radius: 5px; font-size: 14px; background: #edf1e9; }
+.update-actions .primary-button { background: var(--accent); color: white; }
+.update-progress { margin-top: 18px; }
+.update-progress progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.update-progress > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 14px; }
+.update-preference { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 22px; font-size: 15px; }
+.settings-dialog .update-preference label { display: flex; align-items: center; gap: 10px; }
+.update-preference input { width: 17px; height: 17px; accent-color: var(--accent); }
+.titlebar .update-about-entry { margin-left: auto; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; padding: 4px 8px; border-radius: 4px; }
+.titlebar .update-about-entry + .toolbar-restore { margin-left: 0; }
+@media (max-width: 650px) { .settings-dialog { padding: 20px; } .update-details div { flex-direction: column; gap: 1px; margin: 10px 0; } .update-details dd { text-align: left; } .update-toast { right: 16px; } }
+.update-app-surface { display: contents; }
+.update-saving-backdrop { position: fixed; inset: 38px 0 0; z-index: 2000; display: grid; place-items: center; background: #24352c66; padding: 24px; touch-action: none; }
+.update-saving-dialog { width: min(410px, 100%); padding: 28px; border: 1px solid #c3d0bf; border-radius: 8px; background: var(--paper, #fafbf7); color: var(--ink, #2c3527); box-shadow: 0 12px 44px #24352c33; font-size: 15px; line-height: 1.6; outline: none; }
+.update-saving-dialog > svg { color: var(--accent); }
+.update-saving-dialog h2 { margin: 14px 0 8px; font-size: 21px; }
+.update-saving-dialog p { margin: 0; color: var(--muted); }

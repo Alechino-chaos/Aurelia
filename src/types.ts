@@ -3,6 +3,8 @@ import type { HighlightRegion, ReadingSession, SessionAction, SessionSaveEvent }
 import type { NotesExportResult } from '../electron/notes-export';
 import type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView } from '../electron/library-types';
 import type { AppSettings, UiLocale } from '../electron/i18n';
+import type { UpdateState } from '../electron/update-types';
+export type { UpdateState, UpdatePhase, UpdateError } from '../electron/update-types';
 export type { AppSettings, UiLocale } from '../electron/i18n';
 export type { LibraryAction, LibraryState, LibraryImportResult, LibraryRelocateResult, ReadingView, LibraryEntry, LibraryGroup } from '../electron/library-types';
 export type OpenedFile = { name: string; bytes: Uint8Array; id?: string; documentId?: string; libraryId?: string; view?: ReadingView };
@@ -19,6 +21,17 @@ export type SelectedText = {
 declare global {
   interface Window {
     paperdesk?: {
+      getUpdateState(): Promise<UpdateState>;
+      getClosingState(): Promise<boolean>;
+      onClosingState(callback: (closing: boolean) => void): () => void;
+      checkForUpdates(): Promise<UpdateState>;
+      downloadUpdate(): Promise<UpdateState>;
+      cancelUpdateDownload(): Promise<UpdateState>;
+      installUpdate(): Promise<UpdateState>;
+      setAutoCheckUpdates(enabled: boolean): Promise<UpdateState>;
+      updaterReady(): Promise<void>;
+      openUpdateReleasePage(): Promise<void>;
+      onUpdateState(callback: (state: UpdateState) => void): () => void;
       getAppSettings(): Promise<AppSettings>;
       saveAppSettings(input: { locale: UiLocale }): Promise<AppSettings>;
       openPdf(): Promise<OpenedFile | null>;

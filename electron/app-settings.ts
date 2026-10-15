@@ -14,6 +14,7 @@ function confirmed(value: unknown): value is { locale: UiLocale } {
 export class AppSettingsStore {
   private state?: AppSettings;
   private queue: Promise<unknown> = Promise.resolve();
+  private pendingSave: Promise<unknown> = Promise.resolve();
   private readonly suggestedLocale: UiLocale;
   constructor(private directory: string, systemLocale: string) { this.suggestedLocale = suggestUiLocale(systemLocale); }
   private file() { return path.join(this.directory, 'app-settings.json'); }
@@ -51,7 +52,7 @@ export class AppSettingsStore {
   save(input: { locale: UiLocale }): Promise<AppSettings> {
     if (!confirmed(input)) return Promise.reject(appError('请选择有效的界面语言。'));
     const locale = input.locale;
-    return this.serialize(async () => {
+    const operation = this.serialize(async () => {
       // Re-read before every write, protecting newly inaccessible/modified evidence.
       const disk = await this.read();
       const file = this.file(), temporary = `${file}.tmp-${randomUUID()}`;
@@ -73,5 +74,8 @@ export class AppSettingsStore {
         if (ownsTemporary) await unlink(temporary).catch(() => {});
       }
     });
+    this.pendingSave = operation;
+    return operation;
   }
+  async flush(): Promise<void> { await this.pendingSave; }
 }

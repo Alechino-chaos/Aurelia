@@ -6,8 +6,8 @@
 
 1. 按变更范围更新 `package.json` 和 `package-lock.json` 的项目版本，并维护 `CHANGELOG.md`。
 2. 完成相关单元测试、类型检查和 Electron 端到端测试。
-3. 执行 `npm run dist`，生成 Windows portable 程序。
-4. 使用 `scripts/install-local.ps1` 更新本机独立安装；沿用 `.aurelia-install.local.json` 中的安装根目录，并更新桌面 Aurelia 快捷方式。
+3. 执行 `npm run dist`，生成 Windows NSIS 安装包及对应更新元数据。
+4. 使用 `scripts/install-local.ps1` 运行真实安装器；沿用 Windows 注册表登记的实际安装目录，并核对桌面 Aurelia 快捷方式。首次从旧便携交付迁移到安装版时，保留个人 profile。
 5. 核对快捷方式目标、安装记录、应用实际版本及 `resources/app.asar` 与本次打包内容一致。使用隔离 profile 验证已安装程序和本次新增功能。
 6. 只有验证通过后才报告“桌面版本已更新”。修改源码、build 或测试通过不等于完成本机更新。
 
@@ -16,9 +16,10 @@
 ## 仓库清理与 GitHub
 
 - 源码、测试、锁文件、图标、合成示例和公开文档可以提交。
-- 依赖、构建输出、portable 程序、测试 profile、截图、机器安装记录、个人论文和密钥配置不得加入 Git；遵守 `.gitignore`，不使用 `git add -f` 绕过。
-- portable 程序通过 GitHub Release 附件分发。
-- GitHub Release 标题与说明使用英文；只上传 portable `.exe`，不上传校验文件，也不加入校验相关说明。
+- 依赖、构建输出、安装程序、测试 profile、截图、机器安装记录、个人论文和密钥配置不得加入 Git；遵守 `.gitignore`，不使用 `git add -f` 绕过。
+- Windows 安装包通过 GitHub Release 附件分发。从 0.10.0 起，安装版路线取代旧便携版路线。
+- GitHub Release 标题与说明使用英文；上传同一构建的 setup `.exe`、`latest.yml` 和 `.blockmap`，先在草稿中核对齐全再发布。不额外上传 `.sha256` 文件或加入手工校验说明。更新元数据由应用使用。
+- 不自动下载或在普通退出时安装更新；用户分别点击下载与重启更新。正式程序只接受固定官方稳定源；测试源必须限于显式测试构建和本机回环地址。
 - 每次更新完成后清理过期的测试输出和临时文件；删除前检查绝对路径确实位于本仓库或用户明确授权的目标目录。
 - 保留仍在使用的本机配置、依赖、当前版本产物及个人资料。清理不等于执行 `git clean -fdx`。
 - 用户说“准备推送”时，完成本地整理与检查；实际提交或推送按用户指令执行。

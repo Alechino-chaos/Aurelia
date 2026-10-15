@@ -9,7 +9,9 @@ type Stored = { baseUrl: string; model: string; targetLanguage: string; encrypte
 let settings: Stored = { baseUrl: 'https://api.openai.com/v1', model: '', targetLanguage: '简体中文' };
 let apiKey = ''; let keyError = '';
 const active = new Map<string, AbortController>();
+const completion = new Map<AbortController, Promise<void>>();
 let saveQueue: Promise<unknown> = Promise.resolve();
+let pendingSave: Promise<unknown> = Promise.resolve();
 const configFile = () => path.join(app.getPath('userData'), 'ai-settings.json');
 const encryptionAvailable = () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text');
 
@@ -45,9 +47,15 @@ export function saveAiSettings(input: AiSettingsInput): Promise<AiSettings> {
     if (keyError && !input.apiKey?.trim() && !input.clearKey) throw appError('请重新输入 Key，或勾选清除 Key 后保存。');
     if (nextKey && !encryptionAvailable()) throw appError('系统加密存储不可用，无法安全保存 Key。');
     const next: Stored = { baseUrl, model: input.model.trim(), targetLanguage: input.targetLanguage.trim(), encryptedKey: nextKey ? safeStorage.encryptString(nextKey).toString('base64') : undefined };
-    await mkdir(app.getPath('userData'), { recursive: true });
-    await writeFile(`${configFile()}.tmp`, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await rename(`${configFile()}.tmp`, configFile());
+    // Invalid input has no dirty data to persist. Only an actual storage write
+    // participates in the close-time save-failure prompt.
+    const writing = (async () => {
+      await mkdir(app.getPath('userData'), { recursive: true });
+      await writeFile(`${configFile()}.tmp`, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+      await rename(`${configFile()}.tmp`, configFile());
+    })();
+    pendingSave = writing;
+    await writing;
     settings = next; apiKey = nextKey; keyError = '';
     return getAiSettings();
   });
@@ -56,12 +64,26 @@ export function saveAiSettings(input: AiSettingsInput): Promise<AiSettings> {
 }
 export function cancelAi(id: unknown) { if (typeof id === 'string') active.get(id)?.abort(); }
 export function cancelAllAi() { for (const controller of active.values()) controller.abort(); }
+export function hasActiveAi(): boolean { return active.size > 0; }
+export async function flushAiSettings(): Promise<void> { await saveQueue; await pendingSave; }
+/** Cancellation is complete only after the final event has reached the session store. */
+export async function cancelAllAiAndWait(): Promise<void> {
+  cancelAllAi();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([Promise.all([...completion.values()]), new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('AI cancellation timed out')), 10_000);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
 
 export async function runAi(value: unknown, send: (event: AiEvent) => void) {
   const request = validateRequest(value);
   if (!settings.model || keyError) throw appError('请先配置 AI 服务、模型和 API Key。');
   if (active.has(request.id) || active.size >= 2) throw appError('已有请求正在进行，请先停止或等待完成。');
   const controller = new AbortController();
+  let finish!: () => void;
+  completion.set(controller, new Promise<void>(resolve => { finish = resolve; }));
   active.set(request.id, controller);
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
@@ -87,5 +109,5 @@ export async function runAi(value: unknown, send: (event: AiEvent) => void) {
       // Never relay provider error bodies or credentials to the renderer/logs.
       send({ id: request.id, type: 'error', message: key ? message.split(key).join('[已隐藏]') : message });
     }
-  } finally { clearTimeout(timer); active.delete(request.id); }
+  } finally { clearTimeout(timer); active.delete(request.id); completion.delete(controller); finish(); }
 }

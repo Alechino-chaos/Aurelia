@@ -52,6 +52,9 @@ try {
   assert.ok(runtime.appPath.endsWith('app.asar'));
   assert.equal(path.resolve(runtime.appPath).toLowerCase(), path.resolve(path.dirname(install.executablePath), 'resources/app.asar').toLowerCase());
   assert.equal(path.resolve(runtime.userData).toLowerCase(), profile.toLowerCase());
+  const updates = await page.evaluate(() => window.paperdesk.getUpdateState());
+  assert.equal(updates.currentVersion, expectedVersion);
+  assert.equal(updates.supported, true, 'Installed production app must recognize its NSIS registration');
   assert.ok(page.url().startsWith('file:///'));
   page.on('pageerror', error => errors.push(error.message));
   await mkdir('release/verification', { recursive: true });

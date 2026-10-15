@@ -1,66 +1,55 @@
 param([string]$ApplicationRoot)
 $ErrorActionPreference = 'Stop'
-
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$sourceDirectory = Join-Path $projectRoot 'release\win-unpacked'
-$sourceExecutable = Join-Path $sourceDirectory 'Aurelia.exe'
-if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
-    throw 'Build the Windows application with npm run dist first.'
-}
-
-# Install outside the source workspace. The source workspace can
-# carry a Low integrity label that prevents Chromium from starting its sandbox.
-# Copy files; never change security labels or disable the application sandbox.
-if (-not $ApplicationRoot) {
-    $recordPath = Join-Path $projectRoot '.aurelia-install.local.json'
-    if (Test-Path -LiteralPath $recordPath) {
-        $previousInstall = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
-        $ApplicationRoot = $previousInstall.applicationRoot
-    }
-    if (-not $ApplicationRoot) { $ApplicationRoot = Join-Path $env:LOCALAPPDATA 'Programs\Aurelia' }
-}
-$applicationRoot = [IO.Path]::GetFullPath($ApplicationRoot)
 $package = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
-$buildId = '{0}-{1}' -f $package.version, (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$installDirectory = [IO.Path]::GetFullPath((Join-Path $applicationRoot $buildId))
-if (-not $installDirectory.StartsWith($applicationRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Unexpected installation path.'
+$setupPath = Join-Path $projectRoot "release\Aurelia-$($package.version)-setup.exe"
+if (-not (Test-Path -LiteralPath $setupPath)) { throw 'Build the Windows installer with npm run dist first.' }
+$registryPath = 'HKCU:\Software\8e3b71f6-b014-4f5d-83d9-ea8146edc067'
+$previousPath = (Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue).InstallLocation
+if ($previousPath) {
+    if ($ApplicationRoot -and [IO.Path]::GetFullPath($ApplicationRoot).TrimEnd('\') -ne $previousPath.TrimEnd('\')) { throw 'An installed app already exists. Updates must keep its registered installation path.' }
+    $ApplicationRoot = $previousPath
 }
-if (Test-Path -LiteralPath $installDirectory) {
-    throw 'This build directory already exists. Run the script again to use a new directory.'
+if (-not $ApplicationRoot) { $ApplicationRoot = Join-Path $env:LOCALAPPDATA 'Programs\Aurelia' }
+$applicationRoot = [IO.Path]::GetFullPath($ApplicationRoot).TrimEnd('\')
+if ($applicationRoot -match '["\r\n]') { throw 'Invalid installation path' }
+# Normal closure lets the app complete its save-before-close handshake.
+$runningApps = @(Get-Process -Name Aurelia -ErrorAction SilentlyContinue)
+foreach ($runningApp in $runningApps) { if ($runningApp.MainWindowHandle -ne 0) { $null = $runningApp.CloseMainWindow() } }
+$closeDeadline = [DateTime]::UtcNow.AddSeconds(30)
+do {
+    $runningApps = @(Get-Process -Name Aurelia -ErrorAction SilentlyContinue)
+    if (-not $runningApps.Count) { break }
+    Start-Sleep -Milliseconds 500
+} while ([DateTime]::UtcNow -lt $closeDeadline)
+if ($runningApps.Count) { throw 'Aurelia is still running. Close it normally and retry; no process was forced to stop.' }
+# A Low-integrity workspace can prevent NSIS from writing normal application
+# directories. Copy the artifact into a fresh ordinary-user staging directory.
+$stagingRoot = Join-Path ([IO.Path]::GetTempPath()) ('Aurelia-install-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $stagingRoot | Out-Null
+$stagedSetup = Join-Path $stagingRoot (Split-Path -Leaf $setupPath)
+Copy-Item -LiteralPath $setupPath -Destination $stagedSetup
+if ((Get-FileHash -LiteralPath $stagedSetup).Hash -ne (Get-FileHash -LiteralPath $setupPath).Hash) { throw 'Staged installer mismatch.' }
+# NSIS requires /D to be last and unquoted, including when it contains spaces.
+$setup = Start-Process -FilePath $stagedSetup -ArgumentList "/S /currentuser /D=$applicationRoot" -WindowStyle Hidden -PassThru
+if (-not $setup.WaitForExit(180000)) { throw 'Installer is still running. Inspect it before retrying.' }
+if ($setup.ExitCode -ne 0) { throw "Installer failed with exit code $($setup.ExitCode)." }
+Remove-Item -LiteralPath $stagedSetup
+Remove-Item -LiteralPath $stagingRoot
+$registeredPath = (Get-ItemProperty -LiteralPath $registryPath).InstallLocation
+if ($registeredPath.TrimEnd('\') -ne $applicationRoot) { throw 'Registered installation path does not match.' }
+$installedExecutable = Join-Path $registeredPath 'Aurelia.exe'
+$installedAsar = Join-Path $registeredPath 'resources\app.asar'
+foreach ($relativePath in @('Aurelia.exe','resources\app.asar')) {
+    if ((Get-FileHash -LiteralPath (Join-Path $registeredPath $relativePath)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $projectRoot "release\win-unpacked\$relativePath")).Hash) { throw "Installed file mismatch: $relativePath" }
 }
-
-New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
-Get-ChildItem -LiteralPath $sourceDirectory -Force | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $installDirectory -Recurse
+if (-not (Test-Path -LiteralPath (Join-Path $registeredPath 'Uninstall Aurelia.exe'))) { throw 'Uninstaller missing.' }
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Aurelia.lnk'
+$shortcutTarget = $null
+if (Test-Path -LiteralPath $shortcutPath) {
+    $shortcutTarget = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath).TargetPath
+    if ($shortcutTarget -ne $installedExecutable) { throw 'Desktop shortcut points to a different application.' }
 }
-$installedExecutable = Join-Path $installDirectory 'Aurelia.exe'
-if ((Get-FileHash -LiteralPath $sourceExecutable).Hash -ne (Get-FileHash -LiteralPath $installedExecutable).Hash) {
-    throw 'The application copy did not pass verification.'
-}
-
-$shortcutPath = & (Join-Path $PSScriptRoot 'update-shortcut.ps1') -Executable $installedExecutable -ApplicationRoot $applicationRoot
-$shortcutShell = New-Object -ComObject WScript.Shell
-
-$record = [ordered]@{
-    version = $package.version
-    applicationRoot = $applicationRoot
-    executablePath = $installedExecutable
-    shortcutPath = $shortcutPath
-    installedAt = (Get-Date -Format o)
-}
+$record = [ordered]@{version=$package.version; installationType='nsis'; applicationRoot=$registeredPath; executablePath=$installedExecutable; shortcutPath=$(if ($shortcutTarget) {$shortcutPath} else {$null}); installedAt=(Get-Date -Format o)}
 $record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $projectRoot '.aurelia-install.local.json') -Encoding utf8
-# Retire only this project's old shortcut once the new shortcut is saved.
-# Leave the old application and user profile intact.
-$legacyRecordPath = Join-Path $projectRoot '.paperdesk-install.local.json'
-if (Test-Path -LiteralPath $legacyRecordPath) {
-    $legacyRecord = Get-Content -LiteralPath $legacyRecordPath -Raw | ConvertFrom-Json
-    $legacyShortcutPath = Join-Path $projectRoot '启动 PaperDesk.lnk'
-    if (Test-Path -LiteralPath $legacyShortcutPath) {
-        $legacyShortcut = $shortcutShell.CreateShortcut($legacyShortcutPath)
-        if ($legacyShortcut.TargetPath -eq $legacyRecord.executablePath) {
-            Remove-Item -LiteralPath $legacyShortcutPath
-        }
-    }
-}
 $record | ConvertTo-Json

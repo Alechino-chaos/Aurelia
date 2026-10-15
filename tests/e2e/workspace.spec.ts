@@ -189,7 +189,13 @@ test.describe('paper library workspace', () => {
     const temp = path.join(profile, 'reading-sessions', `${documentId}.json.tmp`); await mkdir(temp);
     await page.getByRole('textbox', { name: 'AI 消息' }).fill('latest draft'); await entry(b).locator('.paper-open').click();
     await expect(page.getByRole('alert').filter({ hasText: '无法切换论文' })).toBeVisible(); expect((await page.evaluate(() => window.paperdesk!.getLibrary())).activeId).toBe(original);
-    await app.evaluate(({ dialog, BrowserWindow }) => { dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false }); BrowserWindow.getAllWindows()[0].close(); });
+    // Keep the simulated disk failure in place until native close has reached
+    // its save-failure dialog and the Cancel response has unlocked the app.
+    await app.evaluate(({ dialog, BrowserWindow }) => new Promise<void>(resolve => {
+      dialog.showMessageBox = async () => { resolve(); return { response: 1, checkboxChecked: false }; };
+      BrowserWindow.getAllWindows()[0].close();
+    }));
+    await expect.poll(() => page.evaluate(() => window.paperdesk!.getClosingState())).toBe(false);
     await expect(page.getByRole('textbox', { name: 'AI 消息' })).toHaveValue('latest draft'); await rmdir(temp);
     await page.getByRole('button', { name: '重试保存或恢复' }).click(); await expect(page.getByTestId('session-status')).toHaveText('已保存到本机'); await openEntry(b);
     await app.close(); await launch(); await loaded('paper.pdf'); await openEntry(a); await expect(page.getByRole('textbox', { name: 'AI 消息' })).toHaveValue('latest draft');
